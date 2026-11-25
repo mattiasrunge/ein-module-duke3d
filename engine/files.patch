@@ -1,0 +1,44 @@
+diff --git a/Game/src/config.c b/Game/src/config.c
+index 41c717a..43b99ec 100644
+--- a/Game/src/config.c
++++ b/Game/src/config.c
+@@ -768,6 +768,9 @@ void CONFIG_ReadSetup( void )
+ ===================
+ */
+ 
++// The platform layer's: the game has written the file at path.
++void ein_wrote(const char *path);
++
+ void CONFIG_WriteSetup( void )
+    {
+    int32 dummy, i;
+@@ -863,6 +866,7 @@ void CONFIG_WriteSetup( void )
+    }
+ 
+    SCRIPT_Save (scripthandle, setupfilename);
++   ein_wrote (setupfilename);
+    SCRIPT_Free (scripthandle);
+    }
+ 
+diff --git a/Game/src/menues.c b/Game/src/menues.c
+index 9ee4575..a0bf9aa 100644
+--- a/Game/src/menues.c
++++ b/Game/src/menues.c
+@@ -550,6 +550,9 @@ int loadplayer(int8_t spot)
+     return(0);
+ }
+ 
++// The platform layer's: the game has written the file at path.
++void ein_wrote(const char *path);
++
+ int saveplayer(int8_t spot)
+ {
+     int32_t i;
+@@ -703,6 +706,7 @@ int saveplayer(int8_t spot)
+     dfwrite(&parallaxyscale, sizeof(parallaxyscale), 1, fil);
+ 
+     fclose(fil);
++    ein_wrote(fullpathsavefilename);
+ 
+     if (ud.multimode < 2)
+     {

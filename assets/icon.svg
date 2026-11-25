@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <!-- A radiation trefoil, as Duke Nukem 3D's menus have them: the module's own drawing. -->
+  <path
+    d="M10.40 9.23L6.75 2.91A10.5 10.5 0 0 1 17.25 2.91L13.60 9.23A3.2 3.2 0 0 0 10.40 9.23ZM15.20 12.00L22.50 12.00A10.5 10.5 0 0 1 17.25 21.09L13.60 14.77A3.2 3.2 0 0 0 15.20 12.00ZM10.40 14.77L6.75 21.09A10.5 10.5 0 0 1 1.50 12.00L8.80 12.00A3.2 3.2 0 0 0 10.40 14.77Z" />
+  <circle cx="12" cy="12" r="2.2" />
+</svg>

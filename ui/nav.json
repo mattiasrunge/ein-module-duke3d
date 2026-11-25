@@ -1,0 +1,8 @@
+{
+  "sections": [
+    { "id": "games", "label": "Games", "order": 35 }
+  ],
+  "sidebar": [
+    { "id": "duke3d.page", "section": "games", "label": "Duke Nukem 3D", "icon": "/usr/modules/duke3d/assets/icon.svg", "to": "/duke3d", "order": 30, "signedIn": true }
+  ]
+}

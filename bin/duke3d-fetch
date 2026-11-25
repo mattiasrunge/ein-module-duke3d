@@ -1,0 +1,59 @@
+#!bash
+# duke3d-fetch — fetches one of the games the Duke Nukem 3D page offers into its games folder, when
+# someone chooses Fetch there: the shareware episode. The release is fetched, checked against its
+# SHA-256, and unpacked into a game folder of its own; a file already there under the same name is
+# left as it is. It runs as whoever runs it.
+arg --desc "Fetch one of the games the Duke Nukem 3D page offers into its games folder"
+arg --effect write
+arg '<game>' string "shareware (Duke Nukem 3D's shareware episode)"
+arg --example "duke3d-fetch shareware"
+arg --returns "nothing; the game is in a folder of its own in /groups/users/duke3d, named as the game."
+arg --export
+
+games=/groups/users/duke3d
+case "$GAME" in
+  shareware)
+    # The shareware episode of Duke Nukem 3D 1.3D is 3D Realms', free to play and to give away free
+    # of charge, with its licence beside it; its release, installed, as the Internet Archive keeps it.
+    url=https://archive.org/download/duke3d_201910/DukeNukem3D1.3DSharewareFULL.zip
+    sha256=ae65d993ab342b3d859ec4298650498bd0597ae53875197a029f26e76e5f69a6
+    ;;
+  *)
+    echo "duke3d-fetch: $GAME is not a game it fetches: shareware" >&2
+    exit 2
+    ;;
+esac
+game=$games/$GAME
+# Unpacked outside the household's folders, where EiN's media pipelines would read the release's
+# pictures.
+work=/tmp/duke3d-fetch-$GAME
+
+mkdir -p "$games"
+# Game data, none of it the household's: EiN's media pipelines leave the folder alone.
+attrs -J 'processing=[]' "$games"
+if ! curl -fLs -o "$work.zip" "$url"; then
+  echo "duke3d-fetch: could not fetch $url" >&2
+  exit 1
+fi
+if ! attrs "$work.zip" | grep -q "$sha256"; then
+  echo "duke3d-fetch: $url is not the release it should be (its SHA-256 is not $sha256)" >&2
+  rm "$work.zip"
+  exit 1
+fi
+if ! unzip -o -d "$work" "$work.zip" > /dev/null; then
+  echo "duke3d-fetch: could not unpack $url" >&2
+  rm "$work.zip"
+  [ -e "$work" ] && rm -r "$work"
+  exit 1
+fi
+
+# Move a file of the release into the game's folder, unless one someone uploaded is there already.
+mkdir -p "$game"
+case "$GAME" in
+  shareware)
+    [ -e "$game/duke3d.grp" ] || mv "$work/DUKE3D/DUKE3D.GRP" "$game/duke3d.grp"
+    [ -e "$game/license.txt" ] || mv "$work/DUKE3D/LICENSE.TXT" "$game/license.txt"
+    ;;
+esac
+rm -r "$work" "$work.zip"
+echo "duke3d-fetch: $GAME is in $game"

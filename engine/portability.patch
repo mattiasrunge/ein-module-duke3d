@@ -1,0 +1,43 @@
+diff --git a/Engine/src/filesystem.c b/Engine/src/filesystem.c
+index 1a95ab3..5d759f5 100644
+--- a/Engine/src/filesystem.c
++++ b/Engine/src/filesystem.c
+@@ -417,7 +417,7 @@ int32_t klseek(int32_t handle, int32_t offset, int whence){
+ 	
+ }
+ 
+-#if defined(__APPLE__) || defined(__linux__)
++#if defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
+ int32_t filelength(int32_t fd){
+     struct stat stats;
+     fstat(fd, &stats);
+diff --git a/Game/src/game.c b/Game/src/game.c
+index 8360df5..7663f61 100644
+--- a/Game/src/game.c
++++ b/Game/src/game.c
+@@ -8039,11 +8039,7 @@ void findGRPToUse(char * groupfilefullpath){
+     while ((dirEntry = readdir(dir)) != NULL)
+     {
+         
+-#ifdef __linux__
+-        if (dukeGRP_Match(dirEntry->d_name, _D_EXACT_NAMLEN(dirEntry)))
+-#else
+-        if (dukeGRP_Match(dirEntry->d_name,dirEntry->d_namlen))
+-#endif
++        if (dukeGRP_Match(dirEntry->d_name, strlen(dirEntry->d_name)))
+         {
+             sprintf(groupfilefullpath,"%s",dirEntry->d_name);
+             return;
+diff --git a/Game/src/global.c b/Game/src/global.c
+index cfe41ed..2136f56 100644
+--- a/Game/src/global.c
++++ b/Game/src/global.c
+@@ -776,7 +776,7 @@ void SwapIntelShortArray(short *s, int num)
+   Stolen for Duke3D, too.
+  */
+  
+-#if UNIX
++#if UNIX && !defined(__EMSCRIPTEN__)
+ uint8_t  *strlwr(uint8_t  *s)
+ {
+ 	uint8_t  *p = s;

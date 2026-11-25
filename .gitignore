@@ -1,0 +1,7 @@
+# Game data: GRPs, saves and the like live in EiN's tree, never in the repository.
+*.grp
+*.GRP
+*.sav
+*.SAV
+*.dmo
+*.DMO
