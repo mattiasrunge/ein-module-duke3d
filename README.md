@@ -83,6 +83,31 @@ in its folder, under lower-case names, as it read its directory on DOS.
   play here, nor do add-ons that need more than Duke's own CON files, nor
   multiplayer.
 
+### Where your copy keeps its GRP
+
+Only the GRP is needed, and `DUKE.RTS` if your copy has one beside it (the
+voices of Remote Ridicule). Put them in a folder named for the game, `atomic`
+say, and upload the folder. Leave the rest behind, a copy's DOSBox, manuals,
+installers and launchers, which the game never reads and would only be uploaded
+with it.
+
+- **A DOS installation or CD**: `DUKE3D.GRP` is in the game's directory,
+  `C:\DUKE3D` as Duke's setup made it.
+- **An installed GOG or Steam copy**: `DUKE3D.GRP` is in the game's folder; the
+  Steam Megaton Edition keeps it in `gameroot/`.
+- **GOG's offline installer** (`setup_duke3d_<version>.exe`): it is an Inno
+  Setup installer, which [innoextract](https://constexpr.org/innoextract/)
+  unpacks without Windows or installing the game (Debian and Ubuntu have it as
+  `innoextract`):
+
+  ```sh
+  innoextract -e -d duke3d-gog setup_duke3d_<version>.exe
+  find duke3d-gog -iname 'duke3d*.grp' -o -iname 'duke.rts'
+  ```
+
+The list says which edition a GRP is when it knows its size; one it does not
+know, a modified GRP say, still plays and is listed under its folder's name.
+
 The games are kept in `/groups/users/duke3d`, the household's shared folder, so
 everyone with an account plays the same ones and may add to them, and they stay
 when the module is updated or installed again. The folder's `processing`
