@@ -247,9 +247,9 @@ export function DukePad({ editable, game }: { game: Game; editable: boolean }) {
       <svg viewBox='0 0 320 124' width='100%' style={{ display: 'block', overflow: 'visible', filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.45))' }}>
         <Cap x={78} y={2} w={34} action='Forward' keys={keys('Move_Forward')} />
         <Cap x={0} y={42} w={34} action='Fire' keys={keys('Fire')} />
-        <Cap x={40} y={42} w={34} action={strafes ? 'Left' : 'Turn ←'} keys={keys(left)} />
+        <Cap x={40} y={42} w={34} action={strafes ? 'Left' : 'Turn L'} keys={keys(left)} />
         <Cap x={78} y={42} w={34} action='Back' keys={keys('Move_Backward')} />
-        <Cap x={116} y={42} w={34} action={strafes ? 'Right' : 'Turn →'} keys={keys(right)} />
+        <Cap x={116} y={42} w={34} action={strafes ? 'Right' : 'Turn R'} keys={keys(right)} />
         <Cap x={162} y={42} w={34} action='Jump' keys={keys('Jump')} />
         <Cap x={0} y={82} w={60} action='Run' keys={keys('Run')} />
         <Cap x={66} y={82} w={90} action='Open' keys={keys('Open')} />
