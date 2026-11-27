@@ -13,11 +13,11 @@ it is.
 - The 20th Anniversary World Tour, add-ons that need more than Duke's own CON
   files, and multiplayer do not play here.
 
-### Music
+#### Music
 
 The music is in the GRP, played as on a Sound Blaster 16: nothing to add.
 
-### User maps
+#### User maps
 
 Drop a `.map` made with BUILD for Duke Nukem 3D, and choose the game when there
 is more than one. It goes beside the GRP, and **Play on a map** offers it. The
