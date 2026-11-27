@@ -1,5 +1,5 @@
 diff --git a/Game/src/config.c b/Game/src/config.c
-index 41c717a..43b99ec 100644
+index 41c717a..8e11d88 100644
 --- a/Game/src/config.c
 +++ b/Game/src/config.c
 @@ -768,6 +768,9 @@ void CONFIG_ReadSetup( void )
@@ -16,8 +16,9 @@ index 41c717a..43b99ec 100644
     }
  
     SCRIPT_Save (scripthandle, setupfilename);
+-   SCRIPT_Free (scripthandle);
 +   ein_wrote (setupfilename);
-    SCRIPT_Free (scripthandle);
++   // The script is kept: the page has the settings written again each time a menu closes.
     }
  
 diff --git a/Game/src/menues.c b/Game/src/menues.c

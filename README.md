@@ -185,7 +185,7 @@ Sound** sets the effects' and the music's volume.
 | `engine/Containerfile`, `engine/build.sh`           | The build: pinned emsdk image, BelgianChocolateDuke3D, Chocolate Duke3D's music code and Nuked OPL3, and the compiler's commands.                           |
 | `engine/portability.patch`                          | Builds with Emscripten where the code took Linux or macOS for granted.                                                                                      |
 | `engine/waits.patch`                                | Lets the page run in the two waits that never did: for the skill's sound to end, and for an answer at a console nobody sees.                                |
-| `engine/files.patch`                                | Tells the page when the game has saved a game or written its settings, so it can keep them.                                                                 |
+| `engine/files.patch`                                | Tells the page when the game has saved a game or written its settings, so it can keep them, and lets it write them again.                                     |
 | `engine/new-player.patch`                           | Starts a new player with mouse aiming on.                                                                                                                   |
 | `engine/grp-crc.patch`                              | Knows a GRP of a release's size by it, not by reading all of it for its CRC32, so the GRP is read only as the game asks.                                    |
 | `engine/apogee-music.patch`                         | Lets the music's task be scheduled from outside Apogee's sequencer.                                                                                         |

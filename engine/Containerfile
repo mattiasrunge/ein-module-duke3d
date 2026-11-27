@@ -44,9 +44,10 @@ RUN git init -q /nuked \
   && cp /nuked/opl3.c /nuked/opl3.h /src/opl/
 
 # Builds with Emscripten: files the compiler stopped at, and the page's loops (portability.patch,
-# waits.patch); the page told of saves and duke3d.cfg as the game writes them (files.patch); a new
-# player's mouse, aiming on and its buttons as DOS's SETUP gave them (new-player.patch); and a GRP of
-# a release's size known by it, not read whole for its CRC32 (grp-crc.patch).
+# waits.patch); the page told of saves and duke3d.cfg as the game writes them, as often as it does
+# (files.patch); a new player's mouse, aiming on and its buttons as DOS's SETUP gave them
+# (new-player.patch); and a GRP of a release's size known by it, not read whole for its CRC32
+# (grp-crc.patch).
 COPY portability.patch waits.patch files.patch new-player.patch grp-crc.patch /src/
 RUN cd /src && for patch in portability waits files new-player grp-crc; do git apply $patch.patch; done
 
