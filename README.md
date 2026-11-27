@@ -33,11 +33,11 @@ archive.
 
 ## Install
 
-It needs EiN's games module (`games`, 0.1.1-dev.2 or later, for its engine
-worker kit) and an EiN whose module API is 0.15.77 or later, which gives modules
-their Web Workers. As an administrator, open **Settings → Modules**, choose
-**Install**, and give `https://github.com/mattiasrunge/ein-module-duke3d` under
-**From a repository**.
+It needs EiN's games module (`games`, 0.1.2-dev.8 or later, for its engine
+worker kit and the keys in a game's header) and an EiN whose module API is
+0.15.77 or later, which gives modules their Web Workers. As an administrator,
+open **Settings → Modules**, choose **Install**, and give
+`https://github.com/mattiasrunge/ein-module-duke3d` under **From a repository**.
 
 The games are on the **Games** page, under Browse in the sidebar, a card each.
 The module comes with no games. Until there is one, the Games page offers the
@@ -58,15 +58,27 @@ map**, in the page's header, starts the game on one of its user maps instead
 (below), as `-map` on Duke's command line did.
 
 Click the game to give it the mouse and the keyboard: the browser hides the
-pointer, the mouse turns and aims, and the left button fires. The keys are
-Duke's own, which the game's help (F1) shows: the arrows move, Ctrl fires, Space
-opens, A jumps, Z crouches, Shift runs, Alt strafes, Escape opens the menu, F2
-saves and F3 loads. Escape also gives the mouse back to the browser; click the
-game to hand it over again. While the game has the mouse or the focus it takes
-its keys before EiN does, Alt+letter included. The buttons in the header turn
-the sound off and on and show the game full screen. Quit in the game's menu (or
-F10) leaves the page as it was before **Play**, once the game has shown what it
-shows on quitting.
+pointer, the mouse turns and aims, the left button fires, and the wheel changes
+weapon, up to the next and down to the one before. The keys are Duke's own,
+which the game's help (F1) shows: the arrows move, Ctrl fires, Space opens, A
+jumps, Z crouches, Shift runs, Alt strafes, Escape opens the menu, F2 saves and
+F3 loads. Escape also gives the mouse back to the browser; click the game to
+hand it over again. While the game has the mouse or the focus it takes its keys
+before EiN does, Alt+letter included. The buttons in the header turn the sound
+off and on and show the game full screen. Quit in the game's menu (or F10)
+leaves the page as it was before **Play**, once the game has shown what it shows
+on quitting.
+
+Where a mouse and keyboard play and the page is wide enough, its header shows
+your keys: the ones you move, fire, jump, open, crouch and run with, what the
+mouse's buttons and wheel do, Escape and F1, and F11, which is also the
+fullscreen button there. **⋮** > **Keys** shows them on any width. They are the
+game's own keys, read from your settings and shown again as the game writes
+them; you change them in the game, in **Options** > **Setup Keyboard**, and the
+mouse's in **Options** > **Setup Mouse** > **Button Setup**, where the wheel is
+buttons 3 and 4. Beside forward and back the drawing shows the keys you strafe
+with when they are letters, as WASD's are, and the ones you turn with when they
+are not, as Duke's arrows are.
 
 The page shows the game at 4:3 in every mode, as a monitor showed Duke's 320
 by 200 and its VESA modes.
@@ -74,8 +86,9 @@ by 200 and its VESA modes.
 A player who has played before starts with their own settings, the keys and the
 mouse as they set them in **Options**; a new one starts with mouse aiming on, so
 the mouse looks up and down, as players have aimed since, and with the buttons
-Duke's own setup gave: the left fires, the right strafes and, clicked, opens,
-the middle walks forward.
+Duke's own setup gave: the left fires, the right strafes, the middle walks
+forward. The wheel changes weapon for every player whose settings leave it
+bound to nothing, the game's own default.
 
 ## Saved games and settings
 
@@ -171,6 +184,7 @@ Sound** sets the effects' and the music's volume.
 | `ui/duke3d/engine-worker.ts`                        | The engine worker (`ui.workers`): runs the game a tick at a time under ASYNCIFY, and hands the page its frames, its sound and the files it writes.          |
 | `ui/duke3d/start.ts`                                | What the page starts the worker with, and where the game's files are in the engine's file system; free of the DOM, as all the worker imports is.            |
 | `ui/duke3d/keys.ts`                                 | Browser key codes to the PC keyboard's scancodes, and mouse buttons to BUILD's.                                                                             |
+| `ui/duke3d/pad.tsx`                                 | The keys' drawing the games page shows: the player's keys on the keyboard and the mouse, read from their duke3d.cfg.                                        |
 | `bin/duke3d-games`                                  | Lists the games with their titles, title screens, GRPs, files and user maps, and the free one not fetched yet, for the Games page and a game's page.        |
 | `lib/games.ts`, `lib/api.ts`                        | Where the games are, the editions known by their GRP, the free game offered, and the shape `duke3d-games` answers in.                                       |
 | `lib/catalog.ts`                                    | Reads the games folder: each game's GRP, files and user maps, and what `duke3d-games` says of it.                                                           |
@@ -185,8 +199,8 @@ Sound** sets the effects' and the music's volume.
 | `engine/Containerfile`, `engine/build.sh`           | The build: pinned emsdk image, BelgianChocolateDuke3D, Chocolate Duke3D's music code and Nuked OPL3, and the compiler's commands.                           |
 | `engine/portability.patch`                          | Builds with Emscripten where the code took Linux or macOS for granted.                                                                                      |
 | `engine/waits.patch`                                | Lets the page run in the two waits that never did: for the skill's sound to end, and for an answer at a console nobody sees.                                |
-| `engine/files.patch`                                | Tells the page when the game has saved a game or written its settings, so it can keep them, and lets it write them again.                                     |
-| `engine/new-player.patch`                           | Starts a new player with mouse aiming on.                                                                                                                   |
+| `engine/files.patch`                                | Tells the page when the game has saved a game or written its settings, so it can keep them, and lets it write them again.                                   |
+| `engine/new-player.patch`                           | Starts a new player with mouse aiming on and DOS's mouse buttons, and gives a wheel bound to nothing the weapons.                                           |
 | `engine/grp-crc.patch`                              | Knows a GRP of a release's size by it, not by reading all of it for its CRC32, so the GRP is read only as the game asks.                                    |
 | `engine/apogee-music.patch`                         | Lets the music's task be scheduled from outside Apogee's sequencer.                                                                                         |
 | `assets/icon.svg`                                   | A radiation trefoil, as Duke's menus have them, drawn for the module: its icon on the Games page, filled with the text colour.                              |

@@ -1,5 +1,5 @@
 diff --git a/Game/src/config.c b/Game/src/config.c
-index 43b99ec..3db2e49 100644
+index 8e11d88..d1fb5d6 100644
 --- a/Game/src/config.c
 +++ b/Game/src/config.c
 @@ -231,6 +231,8 @@ void CONFIG_SetDefaults( void )
@@ -21,24 +21,30 @@ index 43b99ec..3db2e49 100644
  void CONFIG_SetupMouse( int32 scripthandle )
     {
     int32 i;
-@@ -389,6 +394,16 @@ void CONFIG_SetupMouse( int32 scripthandle )
+@@ -389,6 +394,22 @@ void CONFIG_SetupMouse( int32 scripthandle )
  	  //CONTROL_SetAnalogAxisScale( i, scale );
        }
  
 +	// A new player's buttons, as DOS's SETUP gave them: the left fires, the
-+	// right strafes and, clicked, opens, the middle walks forward.
++	// right strafes, the middle walks forward.
 +	if (newplayer)
 +	{
 +		CONTROL_MapButton( gamefunc_Fire, 0, false );
 +		CONTROL_MapButton( gamefunc_Strafe, 1, false );
-+		CONTROL_MapButton( gamefunc_Open, 1, true );
 +		CONTROL_MapButton( gamefunc_Move_Forward, 2, false );
++	}
++	// The wheel changes weapon, up to the next and down to the one before,
++	// for every player whose wheel is bound to nothing (buttons 3 and 4).
++	if (MouseMapping[3] == -1 && MouseMapping[4] == -1)
++	{
++		CONTROL_MapButton( gamefunc_Next_Weapon, 3, false );
++		CONTROL_MapButton( gamefunc_Previous_Weapon, 4, false );
 +	}
 +
  	SCRIPT_GetNumber( scripthandle, "Controls","MouseSensitivity_X_Rancid",&mouseSensitivity_X);
  	if(mouseSensitivity_X>63 || mouseSensitivity_X < 0)
  		mouseSensitivity_X  = 15;
-@@ -598,7 +613,8 @@ void CONFIG_ReadSetup( void )
+@@ -598,7 +619,8 @@ void CONFIG_ReadSetup( void )
  
     printf("CONFIG_ReadSetup...\n");
     
