@@ -12,22 +12,32 @@ the maintained fork of
 [Chocolate Duke3D](https://github.com/fabiensanglard/chocolate_duke3D), which
 keeps 3D Realms' Duke Nukem 3D 1.3D/1.5 as it was. It is built to WebAssembly
 with Emscripten, single-threaded, with a platform layer of its own
-(`engine/display_ein.c`, `engine/dsl_ein.c`, `engine/music_ein.c`) and no SDL.
-It draws with BUILD's software renderer at 640 by 480 unless the player picks
-another mode in **Options → Setup Video**. The game keeps its own loops, so it
-runs under Emscripten's ASYNCIFY and waits for the page's animation frames. Its
-adapter (`ui/adapter.ts`) loads it at runtime from the module's `assets/`
-directory and hands it to the games module's page, which gives it its turns from
-`requestAnimationFrame` and draws its frames on a canvas.
+(`engine/display_ein.c`, `engine/dsl_ein.c`, `engine/music_ein.c`,
+`engine/game_ein.c`), no SDL and no DOM. It draws with BUILD's software renderer
+at 640 by 480 unless the player picks another mode in **Options → Setup Video**.
+
+The engine runs in the module's Web Worker (`ui/duke3d/engine-worker.ts`), on
+the games module's engine-worker kit, not on the page. The worker loads it at
+runtime from the module's `assets/` directory and reads the game's GRP from EiN
+a megabyte at a time as the game asks for its files, so a game starts without
+downloading all of its GRP, and only what is played is fetched. The game keeps
+its own loops, so it runs under Emscripten's ASYNCIFY: whenever it has finished
+a frame it waits for the worker's next tick, which the games module's page asks
+for at each of its animation frames, and answers with the frame and the sound
+mixed since the last tick. The page draws the frame on its canvas and plays the
+sound. A slow frame stalls the game, not the page, and nothing is shared memory,
+so it plays the same over plain HTTP as over HTTPS.
 
 It is not one of EiN's own modules and has nothing to do with a family's
 archive.
 
 ## Install
 
-It needs EiN's games module (`games`, 0.1 or later). As an administrator, open
-**Settings → Modules**, choose **Install**, and give
-`https://github.com/mattiasrunge/ein-module-duke3d` under **From a repository**.
+It needs EiN's games module (`games`, 0.1.1-dev.2 or later, for its engine
+worker kit) and an EiN whose module API is 0.15.77 or later, which gives modules
+their Web Workers. As an administrator, open **Settings → Modules**, choose
+**Install**, and give `https://github.com/mattiasrunge/ein-module-duke3d` under
+**From a repository**.
 
 The games are on the **Games** page, under Browse in the sidebar, a card each.
 The module comes with no games. Until there is one, the Games page offers the
@@ -73,8 +83,8 @@ The game's **Save** and **Load** keep your games in your home, in
 `.duke3d/<game>/`, one folder for each game you play, so a save is loaded only
 into the game it was made in and nobody else sees it. Each of the ten slots is a
 file, `game0.sav` to `game9.sav`, as the game writes it. Beside them is
-`duke3d.cfg`, the game's settings and key bindings, written when you quit the
-game, go to another page of EiN's, or close the tab.
+`duke3d.cfg`, the game's settings and key bindings, written as a menu of the
+game's closes, when you quit the game, and when you go to another page of EiN's.
 
 Without an account, saves and settings last only as long as the page.
 
@@ -151,35 +161,39 @@ Sound** sets the effects' and the music's volume.
 
 ## Layout
 
-| Path                                                | What it is for                                                                                                                                                   |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mod.json`                                          | The manifest: the games module it needs, and the route of a game's page.                                                                                         |
-| `etc/games.d/games.json`                            | What the games module knows of the module: its title, icon and route, its list and fetch commands, its games folder, and the files it takes when dropped.        |
-| `ui/pages/game.tsx`                                 | A game's page, `/games/duke3d/<game>`: the games module's page for a game, with the module's adapter.                                                            |
-| `ui/adapter.ts`                                     | The adapter the games module plays the games with: lists them, starts one, gives it its turns, maps the keys, the mouse and the wheel, and names the saves kept. |
-| `ui/duke3d/engine.ts`                               | Loads the glue, the wasm and the game's files, starts the game, on a user map when asked, and wraps the engine's exports.                                        |
-| `ui/duke3d/keys.ts`                                 | Browser key codes to the PC keyboard's scancodes, and mouse buttons to BUILD's.                                                                                  |
-| `bin/duke3d-games`                                  | Lists the games with their titles, title screens, GRPs, files and user maps, and the free one not fetched yet, for the Games page and a game's page.             |
-| `lib/games.ts`, `lib/api.ts`                        | Where the games are, the editions known by their GRP, the free game offered, and the shape `duke3d-games` answers in.                                            |
-| `lib/catalog.ts`                                    | Reads the games folder: each game's GRP, files and user maps, and what `duke3d-games` says of it.                                                                |
-| `lib/cover.ts`                                      | Decodes a game's title screen out of its GRP, reading only the parts it needs, as a PNG.                                                                         |
-| `bin/duke3d-fetch`                                  | Fetches the free game into the games folder, checked against its release's SHA-256.                                                                              |
-| `engine/display_ein.c`                              | BUILD's display, keyboard, mouse and timer driver for the page, and the waits for its animation frames.                                                          |
-| `engine/dsl_ein.c`                                  | The sound card: Apogee's mixer's buffers, and the music added to them, handed to the page.                                                                       |
-| `engine/music_ein.c`                                | The music: Apogee's sequencer on the samples' clock, its AdLib driver's writes to Nuked OPL3, and the chip's output.                                             |
-| `engine/al/`                                        | The little of DOS (ports, interrupts, DPMI, the Sound Blaster) that Apogee's music code still names.                                                             |
-| `engine/include/SDL2/SDL.h`, `engine/unix_compat.h` | The little of SDL the game's code still names, and what it expects of a compiler.                                                                                |
-| `engine/Containerfile`, `engine/build.sh`           | The build: pinned emsdk image, BelgianChocolateDuke3D, Chocolate Duke3D's music code and Nuked OPL3, and the compiler's commands.                                |
-| `engine/portability.patch`                          | Builds with Emscripten where the code took Linux or macOS for granted.                                                                                           |
-| `engine/waits.patch`                                | Lets the page run in the two waits that never did: for the skill's sound to end, and for an answer at a console nobody sees.                                     |
-| `engine/files.patch`                                | Tells the page when the game has saved a game or written its settings, so it can keep them.                                                                      |
-| `engine/new-player.patch`                           | Starts a new player with mouse aiming on.                                                                                                                        |
-| `engine/apogee-music.patch`                         | Lets the music's task be scheduled from outside Apogee's sequencer.                                                                                              |
-| `assets/icon.svg`                                   | A radiation trefoil, as Duke's menus have them, drawn for the module: its icon on the Games page, filled with the text colour.                                   |
-| `assets/duke3d.js`, `assets/duke3d.wasm`            | The built engine, committed, since a module is installed as its repository stands. `assets/duke3d-build.txt` says what built them.                               |
-| `scripts/build-engine.sh`                           | Rebuilds `assets/duke3d.js` and `assets/duke3d.wasm`.                                                                                                            |
-| `test/smoke.mjs`                                    | Signs in with headless Chrome, plays a little, saves screenshots.                                                                                                |
-| `deno.jsonc`                                        | Generated from `mod.json` by core's `deno task sync:modules`, for type-checking in a core checkout.                                                              |
+| Path                                                | What it is for                                                                                                                                              |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mod.json`                                          | The manifest: the games module it needs, the route of a game's page, and the engine worker.                                                                 |
+| `etc/games.d/games.json`                            | What the games module knows of the module: its title, icon and route, its list and fetch commands, its games folder, and the files it takes when dropped.   |
+| `ui/pages/game.tsx`                                 | A game's page, `/games/duke3d/<game>`: the games module's page for a game, with the module's adapter.                                                       |
+| `ui/adapter.ts`                                     | The adapter the games module plays the games with: lists them, starts one, and names the saves kept.                                                        |
+| `ui/duke3d/engine.ts`                               | Starts a game in the engine worker: its build, its GRP read as the game asks, its other files and the saves whole, and the keys and mouse as it takes them. |
+| `ui/duke3d/engine-worker.ts`                        | The engine worker (`ui.workers`): runs the game a tick at a time under ASYNCIFY, and hands the page its frames, its sound and the files it writes.          |
+| `ui/duke3d/start.ts`                                | What the page starts the worker with, and where the game's files are in the engine's file system; free of the DOM, as all the worker imports is.            |
+| `ui/duke3d/keys.ts`                                 | Browser key codes to the PC keyboard's scancodes, and mouse buttons to BUILD's.                                                                             |
+| `bin/duke3d-games`                                  | Lists the games with their titles, title screens, GRPs, files and user maps, and the free one not fetched yet, for the Games page and a game's page.        |
+| `lib/games.ts`, `lib/api.ts`                        | Where the games are, the editions known by their GRP, the free game offered, and the shape `duke3d-games` answers in.                                       |
+| `lib/catalog.ts`                                    | Reads the games folder: each game's GRP, files and user maps, and what `duke3d-games` says of it.                                                           |
+| `lib/cover.ts`                                      | Decodes a game's title screen out of its GRP, reading only the parts it needs, as a PNG.                                                                    |
+| `bin/duke3d-fetch`                                  | Fetches the free game into the games folder, checked against its release's SHA-256.                                                                         |
+| `engine/display_ein.c`                              | BUILD's display, keyboard, mouse and timer driver for the engine worker, and the waits for its ticks.                                                       |
+| `engine/dsl_ein.c`                                  | The sound card: Apogee's mixer's buffers, and the music added to them, handed to the page.                                                                  |
+| `engine/music_ein.c`                                | The music: Apogee's sequencer on the samples' clock, its AdLib driver's writes to Nuked OPL3, and the chip's output.                                        |
+| `engine/game_ein.c`                                 | What the worker asks of the game itself: whether a menu or the console is up, and its settings written.                                                     |
+| `engine/al/`                                        | The little of DOS (ports, interrupts, DPMI, the Sound Blaster) that Apogee's music code still names.                                                        |
+| `engine/include/SDL2/SDL.h`, `engine/unix_compat.h` | The little of SDL the game's code still names, and what it expects of a compiler.                                                                           |
+| `engine/Containerfile`, `engine/build.sh`           | The build: pinned emsdk image, BelgianChocolateDuke3D, Chocolate Duke3D's music code and Nuked OPL3, and the compiler's commands.                           |
+| `engine/portability.patch`                          | Builds with Emscripten where the code took Linux or macOS for granted.                                                                                      |
+| `engine/waits.patch`                                | Lets the page run in the two waits that never did: for the skill's sound to end, and for an answer at a console nobody sees.                                |
+| `engine/files.patch`                                | Tells the page when the game has saved a game or written its settings, so it can keep them.                                                                 |
+| `engine/new-player.patch`                           | Starts a new player with mouse aiming on.                                                                                                                   |
+| `engine/grp-crc.patch`                              | Knows a GRP of a release's size by it, not by reading all of it for its CRC32, so the GRP is read only as the game asks.                                    |
+| `engine/apogee-music.patch`                         | Lets the music's task be scheduled from outside Apogee's sequencer.                                                                                         |
+| `assets/icon.svg`                                   | A radiation trefoil, as Duke's menus have them, drawn for the module: its icon on the Games page, filled with the text colour.                              |
+| `assets/duke3d.js`, `assets/duke3d.wasm`            | The built engine, committed, since a module is installed as its repository stands. `assets/duke3d-build.txt` says what built them.                          |
+| `scripts/build-engine.sh`                           | Rebuilds `assets/duke3d.js` and `assets/duke3d.wasm`.                                                                                                       |
+| `test/smoke.mjs`                                    | Signs in with headless Chrome, plays a little, saves screenshots.                                                                                           |
+| `deno.jsonc`                                        | Generated from `mod.json` by core's `deno task sync:modules`, for type-checking in a core checkout.                                                         |
 
 ## Building the engine
 
@@ -190,11 +204,11 @@ Needs only docker with buildx, or podman; nothing is installed on the host.
 It builds `engine/Containerfile` and exports the result into `assets/` with the
 local exporter. The source of the committed `assets/duke3d.wasm` is
 BelgianChocolateDuke3D at the commit `engine/Containerfile` pins, with
-`engine/portability.patch`, `engine/waits.patch`, `engine/files.patch` and
-`engine/new-player.patch` applied; Apogee's `al_midi.c`, `gmtimbre.c` and
-`midi.c` from Chocolate Duke3D at the commit it pins, with
-`engine/apogee-music.patch`; Nuked OPL3 at the commit it pins; and the `engine/`
-files added.
+`engine/portability.patch`, `engine/waits.patch`, `engine/files.patch`,
+`engine/new-player.patch` and `engine/grp-crc.patch` applied; Apogee's
+`al_midi.c`, `gmtimbre.c` and `midi.c` from Chocolate Duke3D at the commit it
+pins, with `engine/apogee-music.patch`; Nuked OPL3 at the commit it pins; and
+the `engine/` files added.
 
 ## Developing
 

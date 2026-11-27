@@ -1,0 +1,50 @@
+diff --git a/Engine/src/filesystem.c b/Engine/src/filesystem.c
+index 5d759f5..0b2adfe 100644
+--- a/Engine/src/filesystem.c
++++ b/Engine/src/filesystem.c
+@@ -60,6 +60,21 @@ static grpSet_t grpSet;
+ 
+ 
+ uint8_t         crcBuffer[ 1 << 20]     ;
++
++// The CRC32 of the base GRP of Duke's release that is `size` bytes long: the shareware 1.3D, the
++// full 1.3D, Plutonium 1.4 or Atomic 1.5; 0 for any other size.
++static uint32_t known_grp_crc32(int32_t size)
++{
++	switch (size)
++	{
++	case 11035779: return 0x983AD923;
++	case 26524524: return 0xBBC9CE44;
++	case 44348015: return 0xF514A6AC;
++	case 44356548: return 0xFD3DCFF1;
++	default: return 0;
++	}
++}
++
+ int32_t initgroupfile(const char  *filename)
+ {
+ 	uint8_t         buf[16]                 ;
+@@ -141,6 +156,10 @@ int32_t initgroupfile(const char  *filename)
+     //archive->fileOffsets[archive->numFiles-1] = j;
+ 	
+     
++	// A base GRP of a size one of Duke's releases has is that release, and has its CRC32: the
++	// GRP is read from the network as the game asks for its files, so it is not read whole for it.
++	uint32_t known = known_grp_crc32(lseek(archive->fileDescriptor, 0, SEEK_END));
++
+ 	// Compute CRC32 of the whole grp and implicitely caches the GRP in memory through windows caching service.
+     // Rewind the fileDescriptor
+ 	lseek(archive->fileDescriptor, 0, SEEK_SET);
+@@ -149,9 +168,11 @@ int32_t initgroupfile(const char  *filename)
+ 	//groupfil_memory[numgroupfiles] = malloc(i);
+     
+     //Load the full GRP in RAM.
+-	while((j=read(archive->fileDescriptor, crcBuffer, sizeof(crcBuffer)))){
++	while(!known && (j=read(archive->fileDescriptor, crcBuffer, sizeof(crcBuffer)))){
+ 		archive->crc32 = crc32_update(crcBuffer,j,archive->crc32);
+ 	}
++	if (known)
++		archive->crc32 = known;
+     
+     // The game layer seems to absolutely need to access an array int[4] groupefil_crc32
+     // so we need to store the crc32 in there too.

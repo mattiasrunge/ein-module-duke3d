@@ -3,9 +3,9 @@
   "version": "0.2.0",
   "description": "Duke Nukem 3D in EiN: Chocolate Duke3D built to WebAssembly, played on the Games page",
   "license": "GPL-2.0-or-later AND LicenseRef-BUILD",
-  "coreApi": "^0.15.75",
+  "coreApi": "^0.15.77",
   "dependencies": {
-    "games": "^0.1.0"
+    "games": "^0.1.1-dev.2"
   },
   "exports": {
     "./api": "./lib/api.ts"
@@ -16,6 +16,9 @@
     "@duke3d/games": "./lib/games.ts"
   },
   "ui": {
+    "workers": {
+      "engine": "ui/duke3d/engine-worker.ts"
+    },
     "routes": {
       "/games/duke3d/:game": "ui/pages/game.tsx"
     }

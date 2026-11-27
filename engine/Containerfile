@@ -1,8 +1,8 @@
-# Builds Duke Nukem 3D (BelgianChocolateDuke3D) to WebAssembly for the module's page:
-# assets/duke3d.js and assets/duke3d.wasm, single-threaded, with no SDL. The display, keyboard,
-# mouse and timer are display_ein.c, the sound card dsl_ein.c, and the music music_ein.c, which plays
-# the songs as a Sound Blaster 16 did, through Apogee's own MIDI sequencer and AdLib driver from the
-# original Chocolate Duke3D into Nuked OPL3.
+# Builds Duke Nukem 3D (BelgianChocolateDuke3D) to WebAssembly for the module's engine worker:
+# assets/duke3d.js and assets/duke3d.wasm, single-threaded, with no SDL and no DOM. The display,
+# keyboard, mouse and timer are display_ein.c, the sound card dsl_ein.c, the music music_ein.c, which
+# plays the songs as a Sound Blaster 16 did, through Apogee's own MIDI sequencer and AdLib driver from
+# the original Chocolate Duke3D into Nuked OPL3, and what the worker asks of the game game_ein.c.
 #
 #   docker buildx build --file engine/Containerfile --output type=local,dest=assets engine
 #
@@ -44,10 +44,11 @@ RUN git init -q /nuked \
   && cp /nuked/opl3.c /nuked/opl3.h /src/opl/
 
 # Builds with Emscripten: files the compiler stopped at, and the page's loops (portability.patch,
-# waits.patch); the page told of saves and duke3d.cfg as the game writes them (files.patch); and a new
-# player's mouse, aiming on and its buttons as DOS's SETUP gave them (new-player.patch).
-COPY portability.patch waits.patch files.patch new-player.patch /src/
-RUN cd /src && for patch in portability waits files new-player; do git apply $patch.patch; done
+# waits.patch); the page told of saves and duke3d.cfg as the game writes them (files.patch); a new
+# player's mouse, aiming on and its buttons as DOS's SETUP gave them (new-player.patch); and a GRP of
+# a release's size known by it, not read whole for its CRC32 (grp-crc.patch).
+COPY portability.patch waits.patch files.patch new-player.patch grp-crc.patch /src/
+RUN cd /src && for patch in portability waits files new-player grp-crc; do git apply $patch.patch; done
 
 WORKDIR /src
 # This build's own compatibility header in place of Chocolate Duke3D's, the platform layer, the
@@ -55,11 +56,11 @@ WORKDIR /src
 COPY unix_compat.h Engine/src/
 COPY include include/
 COPY al/ al/
-COPY display_ein.c dsl_ein.c music_ein.c build.sh ./
+COPY display_ein.c dsl_ein.c music_ein.c game_ein.c build.sh ./
 
 RUN mkdir -p /out \
   && sh build.sh /out \
-  && echo "BelgianChocolateDuke3D ${BELGIAN_COMMIT} with portability.patch, waits.patch, files.patch and new-player.patch, Chocolate Duke3D ${CHOCOLATE_COMMIT}'s AdLib music with apogee-music.patch, Nuked OPL3 ${NUKED_COMMIT}, emsdk 6.0.13" > /out/duke3d-build.txt
+  && echo "BelgianChocolateDuke3D ${BELGIAN_COMMIT} with portability.patch, waits.patch, files.patch, new-player.patch and grp-crc.patch, Chocolate Duke3D ${CHOCOLATE_COMMIT}'s AdLib music with apogee-music.patch, Nuked OPL3 ${NUKED_COMMIT}, emsdk 6.0.13" > /out/duke3d-build.txt
 
 FROM scratch
 COPY --from=build /out/ /

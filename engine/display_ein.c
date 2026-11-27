@@ -1,17 +1,17 @@
 /*
  * display_ein.c -- BUILD's display, keyboard, mouse and timer driver for
- * the EiN page, in place of Chocolate Duke3D's SDL one (display.c): no
- * SDL, no window and no event loop of its own.
+ * the module's engine worker, in place of Chocolate Duke3D's SDL one
+ * (display.c): no SDL, no window, no DOM and no event loop of its own.
  *
  * The game keeps its blocking loops (the logos, the menus' waits, the
  * bonus screens), so the build runs it under Emscripten's ASYNCIFY: each
- * finished frame (_nextpage) waits for the page's next animation frame,
- * and a loop that only polls (_handle_events, _idle) hands the page a
- * turn once a frame's time has gone by. Between turns the page hands over
- * keys, already as the PC keyboard's scancodes, the mouse's movement and
- * buttons, and pulls the sound (dsl_ein.c); it copies the frame from
- * ein_screen onto its canvas whenever ein_frames moves on, at the size
- * ein_width and ein_height give.
+ * finished frame (_nextpage) waits for the worker's next tick, which the
+ * page asks for at each of its animation frames, and a loop that only
+ * polls (_handle_events, _idle) waits for one once a frame's time has
+ * gone by. Between ticks the worker hands over keys, already as the PC
+ * keyboard's scancodes, the mouse's movement and buttons, and pulls the
+ * sound (dsl_ein.c); it takes the frame from ein_screen whenever
+ * ein_frames moves on, at the size ein_width and ein_height give.
  *
  * Parts of it follow display.c, written by Ryan C. Gordon for BUILD.
  * "Build Engine & Tools" Copyright (c) 1993-1997 Ken Silverman
@@ -57,12 +57,12 @@ static uint32_t colours[256];
 // The palette last set, as Ken's entries (VBE_setPalette); the engine reads it back.
 uint8_t lastPalette[768];
 
-// How many frames have been shown: the page copies when it moves on.
+// How many frames have been shown: the worker takes one when it moves on.
 static uint32_t frames = 0;
 
-// Keys the page handed over, as the PC keyboard sends them: a scancode,
-// +128 when the key went up, after 0xE0 for an extended key. A turn
-// reads them all, so this only needs to hold one turn's worth.
+// Keys the worker handed over, as the PC keyboard sends them: a scancode,
+// +128 when the key went up, after 0xE0 for an extended key. A tick
+// reads them all, so this only needs to hold one tick's worth.
 #define KEY_QUEUE_SIZE 256
 
 static uint8_t key_queue[KEY_QUEUE_SIZE];
@@ -79,11 +79,11 @@ static short mouse_buttons = 0;
 
 static uint8_t drawpixel_color = 0;
 
-// When the game last gave the page a turn, in milliseconds.
+// When the game last waited for a tick, in milliseconds.
 static double last_turn = 0;
 
-// A turn for the page: the next animation frame, or, when the page is
-// hidden, whenever it shows again.
+// Wait for the worker's next tick: the page's next animation frame, or,
+// when the page is hidden, whenever it shows again.
 EM_ASYNC_JS(void, ein_wait_frame, (void), {
 	await Module.einFrame();
 });
@@ -94,7 +94,7 @@ EM_JS(void, ein_wrote, (const char *path), {
 	if (Module.einWrote) Module.einWrote(UTF8ToString(path));
 });
 
-// dsl_ein.c's: the sound the page did not pull, mixed and dropped.
+// dsl_ein.c's: the sound the worker did not pull, mixed and dropped.
 void ein_audio_catch_up(void);
 
 static void take_turn(void)
@@ -108,7 +108,7 @@ static void take_turn(void)
 // scancode, 0x80 above it for an extended key.
 static uint8_t fresh[256];
 
-// Hand the game the keys that came since its last turn. A key that went
+// Hand the game the keys that came since its last tick. A key that went
 // down and up again before the game finished a frame would be down for
 // no frame at all, so its release, and what came after, wait until the
 // game has drawn one with the key down.
@@ -143,8 +143,9 @@ static void read_keys(void)
 
 void _handle_events(void)
 {
-	// A loop that only polls would never let the page run: after a
-	// frame's time it gets a turn, and the keys it handed over.
+	// A loop that only polls would never let the worker answer its
+	// tick: after a frame's time it waits for the next one, and the keys
+	// that came with it.
 	if (emscripten_get_now() - last_turn > 16)
 		take_turn();
 	read_keys();
@@ -570,17 +571,6 @@ void ein_mouse_button(int pressed, int bit)
 		mouse_buttons |= bit;
 	else
 		mouse_buttons &= ~bit;
-}
-
-// The game's config.c: writes duke3d.cfg.
-void CONFIG_WriteSetup(void);
-
-// Write duke3d.cfg now, as quitting does, so the player's settings are
-// kept when the page stops the game without it.
-EMSCRIPTEN_KEEPALIVE
-void ein_write_config(void)
-{
-	CONFIG_WriteSetup();
 }
 
 EMSCRIPTEN_KEEPALIVE

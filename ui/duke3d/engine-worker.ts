@@ -1,0 +1,115 @@
+/**
+ * The module's engine worker, run by the games module's kit (`serveEngine`): Duke Nukem 3D's engine,
+ * Emscripten's build in `assets/`, with the game's GRP read from EiN a piece at a time as it asks.
+ *
+ * The game keeps its own loops, so it runs under ASYNCIFY (`engine/display_ein.c`): whenever it has
+ * finished a frame, or has polled for a frame's time, it waits for its next tick (`Module.einFrame`),
+ * and a tick lets it run until it waits again. Between ticks the keys, the mouse and the kit's other
+ * calls reach it; it leaves its frame as R, G, B, A bytes in its memory, which is put on a canvas.
+ */
+import { type EmscriptenFS, type EmscriptenModule, type Engine, exitStatus, FrameCanvas, heapSound, serveEngine, startEmscripten } from '@games/engine';
+import { type DukeStart, GAME_DIR } from './start.ts';
+
+/** What the engine's platform layer exports (`engine/`), beside Emscripten's own. */
+type DukeModule = EmscriptenModule & {
+  FS: EmscriptenFS & { chdir(path: string): void };
+  callMain(args: string[]): number;
+  _ein_key(pressed: number, scancode: number): void;
+  _ein_mouse(dx: number, dy: number): void;
+  _ein_mouse_button(pressed: number, bit: number): void;
+  _ein_write_config(): void;
+  _ein_menu(): number;
+  _ein_screen(): number;
+  _ein_width(): number;
+  _ein_height(): number;
+  _ein_frames(): number;
+  _ein_audio_rate(rate: number): void;
+  _ein_audio_render(at: number, frames: number): void;
+};
+
+let duke: DukeModule;
+const frames = new FrameCanvas();
+let drawn = 0;
+let sound: ((count: number) => Int16Array<ArrayBuffer>) | undefined;
+/** Lets the game, waiting for its next tick, run on; nothing while it runs or once it has ended. */
+let waiting: (() => void) | undefined;
+/** Ends the tick running, once the game waits again or has ended. */
+let ticking: (() => void) | undefined;
+/** Ends the game, once it has started. */
+let end: ((error?: unknown) => void) | undefined;
+
+const ticked = () => {
+  const done = ticking;
+  ticking = undefined;
+  done?.();
+};
+
+// The game fails inside a tick in a promise of ASYNCIFY's, which nothing awaits: it ends the game.
+addEventListener('unhandledrejection', (event) => {
+  if (!end) return;
+  event.preventDefault();
+  end(event.reason);
+});
+
+const engine: Engine<DukeStart> = {
+  async boot(boot) {
+    // The game ends on its own in a tick, on Quit with exit(0) or as it fails: the page hears it,
+    // and the tick is over.
+    end = (error) => {
+      waiting = undefined;
+      boot.end(error);
+      ticked();
+    };
+    const ending = end;
+    duke = await startEmscripten<DukeModule>(boot, boot.payload.build, {
+      // The game writes its saves and duke3d.cfg in its directory, by their names.
+      written: (path) => {
+        const name = path.split('/').at(-1) ?? path;
+        return { path: `${GAME_DIR}/${name}`, name };
+      },
+      module: {
+        einFrame: () =>
+          new Promise<void>((resume) => {
+            waiting = resume;
+            ticked();
+          }),
+        onExit: (status: number) => ending(exitStatus(status)),
+        onAbort: (what: unknown) => ending(what instanceof Error ? what : new Error(`the engine aborted: ${String(what)}`)),
+      },
+    });
+    duke.FS.mkdirTree(GAME_DIR);
+    duke.FS.chdir(GAME_DIR);
+    if (boot.sampleRate) {
+      duke._ein_audio_rate(boot.sampleRate);
+      sound = heapSound(duke, (at, count) => duke._ein_audio_render(at, count));
+    }
+    // main runs until the game first waits for a tick.
+    try {
+      duke.callMain(boot.payload.args);
+    } catch (error) {
+      ending(error);
+    }
+  },
+  tick() {
+    const resume = waiting;
+    if (!resume) return;
+    waiting = undefined;
+    return new Promise<void>((done) => {
+      ticking = done;
+      resume();
+    });
+  },
+  frame() {
+    if (duke._ein_frames() === drawn) return undefined;
+    drawn = duke._ein_frames();
+    return frames.rgba(new Uint8Array(duke.HEAPU8.buffer, duke._ein_screen()), duke._ein_width(), duke._ein_height());
+  },
+  sound: (count) => sound?.(count),
+  key: (pressed, scancode) => duke._ein_key(pressed ? 1 : 0, scancode),
+  mouse: (dx, dy) => duke._ein_mouse(dx, dy),
+  button: (pressed, bit) => duke._ein_mouse_button(pressed ? 1 : 0, bit),
+  menu: () => duke._ein_menu() !== 0,
+  keep: () => duke._ein_write_config(),
+};
+
+serveEngine(engine);

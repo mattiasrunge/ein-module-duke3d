@@ -13,10 +13,10 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 See the GNU General Public License for more details.
 
 */
-// music_ein.c -- the music for the EiN page, as Duke Nukem 3D played it
-// on a Sound Blaster 16: the songs' MIDI through Apogee's own sequencer
-// (midi.c) and AdLib driver (al_midi.c), with the game's timbre bank,
-// into an OPL3, which Nuked OPL3 emulates. The sequencer was a timer
+// music_ein.c -- the music for the module's engine worker, as Duke
+// Nukem 3D played it on a Sound Blaster 16: the songs' MIDI through
+// Apogee's own sequencer (midi.c) and AdLib driver (al_midi.c), with the
+// game's timbre bank, into an OPL3, which Nuked OPL3 emulates. The sequencer was a timer
 // task; here its task runs on the samples' clock as dsl_ein.c pulls the
 // music, and the chip's output is added to the effects.
 
