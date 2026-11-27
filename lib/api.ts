@@ -12,6 +12,8 @@ export type InstalledGame = {
   path: string;
   /** Its GRP, its size and its user maps, as the Games page shows them under its title. */
   detail: string;
+  /** What the game is, for a game the module knows, shown under its title on its page. */
+  description?: string;
   /** Its title screen, read out of its GRP, as a PNG `data:` URL; none when the GRP has none. */
   cover?: string;
   /** The game's GRP, `duke3d.grp` or another `duke3d*.grp`, as named in the folder. */

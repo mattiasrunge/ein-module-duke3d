@@ -26,6 +26,18 @@ const EDITIONS: Record<number, string> = {
   44356548: 'Duke Nukem 3D: Atomic Edition',
 };
 
+/** What each edition is, by its title, for its page. */
+const DESCRIPTIONS: Record<string, string> = {
+  'Duke Nukem 3D (shareware)':
+    "L.A. Meltdown, the first episode of 3D Realms' Duke Nukem 3D (1996): Duke against the alien invaders in a wrecked Los Angeles, free to play and pass on.",
+  'Duke Nukem 3D': "3D Realms' 1996 first-person shooter: Duke against the alien invaders across Los Angeles, a space station and the moon, one-liner by one-liner.",
+  'Duke Nukem 3D: Atomic Edition':
+    "3D Realms' Duke Nukem 3D (1996) with its fourth episode, The Birth: Duke against the alien invaders from Los Angeles to the moon and back, one-liner by one-liner.",
+};
+
+/** What the edition titled `title` is, when the module knows it. */
+export const descriptionOf = (title: string): string | undefined => DESCRIPTIONS[title];
+
 /** The title of the game in folder `name` whose GRP is `size` bytes. */
 export function titleOf(name: string, size: number): string {
   return EDITIONS[size] ?? name;

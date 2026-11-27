@@ -1,7 +1,7 @@
 import type { Command, NodeAttrs } from '@ein/client';
 import type { Game, InstalledGame } from './api.ts';
 import { coverOf } from './cover.ts';
-import { byRank, GAMES, GRP_FILE, isShareware, MAP_FILE, OFFERS, titleOf } from './games.ts';
+import { byRank, descriptionOf, GAMES, GRP_FILE, isShareware, MAP_FILE, OFFERS, titleOf } from './games.ts';
 
 /** `bytes` as a person reads a size: `11 MB`. */
 const sizeText = (bytes: number): string =>
@@ -19,12 +19,15 @@ async function readGame(cmd: Command, name: string): Promise<InstalledGame | und
   const maps = isShareware(grp.size) ? [] : files.map((file) => MAP_FILE.exec(file.name)?.[1]).filter((map) => map !== undefined).sort();
   const cover = await coverOf(cmd, `${path}/${grp.name}`).catch(() => undefined);
   const mapsText = maps.length === 0 ? '' : maps.length === 1 ? ' · 1 user map' : ` · ${maps.length} user maps`;
+  const title = titleOf(name, grp.size);
+  const description = descriptionOf(title);
   return {
     id: name,
-    title: titleOf(name, grp.size),
+    title,
     state: 'installed',
     path,
     detail: `${grp.name} · ${sizeText(size)}${mapsText}`,
+    ...(description ? { description } : {}),
     ...(cover ? { cover } : {}),
     grp: grp.name,
     files: files.map((file) => file.name).sort(),
