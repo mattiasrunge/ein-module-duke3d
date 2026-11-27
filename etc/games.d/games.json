@@ -1,0 +1,13 @@
+{
+  "title": "Duke Nukem 3D",
+  "icon": "/usr/modules/duke3d/assets/icon.svg",
+  "route": "/games/duke3d",
+  "list": "duke3d-games",
+  "fetch": "duke3d-fetch",
+  "folder": "/groups/users/duke3d",
+  "drops": [
+    { "place": "own-folder", "label": "a Duke Nukem 3D GRP", "name": "^duke3d.*\\.grp$", "magic": [{ "at": 0, "text": "KenSilverman" }] },
+    { "place": "module", "label": "a Duke Nukem 3D game", "contains": "duke3d.grp" },
+    { "place": "game", "label": "a Duke Nukem 3D user map", "name": "\\.map$", "magic": [{ "at": 0, "hex": "07000000" }] }
+  ]
+}

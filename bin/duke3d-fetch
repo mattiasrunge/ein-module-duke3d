@@ -1,9 +1,10 @@
 #!bash
-# duke3d-fetch — fetches one of the games the Duke Nukem 3D page offers into its games folder, when
-# someone chooses Fetch there: the shareware episode. The release is fetched, checked against its
-# SHA-256, and unpacked into a game folder of its own; a file already there under the same name is
-# left as it is. It runs as whoever runs it.
-arg --desc "Fetch one of the games the Duke Nukem 3D page offers into its games folder"
+# duke3d-fetch — fetches one of the free games duke3d-games offers into its games folder, when
+# someone chooses Fetch on the Games page or the game's own: the shareware episode. The release is
+# fetched, checked against its SHA-256, and unpacked into a game folder of its own; a file already
+# there under the same name is left as it is. It runs as whoever runs it, which has to be the
+# administrator: EiN lets only the administrator fetch URLs.
+arg --desc "Fetch one of the free Duke Nukem 3D games the Games page offers into the games folder"
 arg --effect write
 arg '<game>' string "shareware (Duke Nukem 3D's shareware episode)"
 arg --example "duke3d-fetch shareware"

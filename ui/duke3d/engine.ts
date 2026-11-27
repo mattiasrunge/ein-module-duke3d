@@ -1,7 +1,6 @@
 import { fileUrl } from '@ein/ui/lib';
-import type { Kept } from './saves.ts';
-import type { Sound } from './sound.ts';
-import { type Game, GAMES } from './games.ts';
+import type { StartOptions } from '@games/adapter';
+import type { InstalledGame } from '../../lib/api.ts';
 
 /** Where the module's built engine sits in EiN's tree. */
 const ASSETS = '/usr/modules/duke3d/assets';
@@ -13,7 +12,7 @@ const GAME_DIR = '/duke3d';
 type DukeModule = {
   FS: {
     writeFile(path: string, data: Uint8Array): void;
-    readFile(path: string): Uint8Array;
+    readFile(path: string): Uint8Array<ArrayBuffer>;
     mkdir(path: string): void;
     chdir(path: string): void;
   };
@@ -33,9 +32,11 @@ type DukeModule = {
   _ein_audio_render(buffer: number, frames: number): void;
 };
 
+/** How a game ended: the status it exited with, 0 when the player quit, or the error it stopped on. */
+export type End = { status: number } | { error: unknown };
+
 /** A running game: it runs itself, a turn at a time; the page hands it frames, keys and the mouse. */
-export type Engine = {
-  game: string;
+type Engine = {
   /** The frame's size, which the game's video options may change. */
   width(): number;
   height(): number;
@@ -58,18 +59,17 @@ export type Engine = {
 /** Fetch a file as bytes; `/file/` needs the session's cookie, which a same-origin fetch sends. */
 async function fetchFile(path: string): Promise<Uint8Array> {
   const response = await fetch(fileUrl(path));
-  if (!response.ok) {
-    throw new Error(`${path}: ${response.status} ${response.statusText}`);
-  }
+  if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`);
   return new Uint8Array(await response.arrayBuffer());
 }
 
 /**
  * Load the engine and `game`'s files and start the game. `log` gets what the game prints, line by
- * line, and `sound` its sound effects and music; without it the game is silent. `kept` are the
- * player's saves and duke3d.cfg of `game`, which the game's Load menu lists and its start-up reads,
- * and `onKeep` hears each of them the game writes. `onEnd` hears the game end: the status it exited
- * with, 0 when the player quit, or the error it stopped on.
+ * line, and `sound` its sound effects and music, which the game mixes together; without it the game
+ * is silent. `kept` are the player's saves and duke3d.cfg of `game`, which the game's Load menu
+ * lists and its start-up reads, and `onKeep` hears each of them the game writes. With `map`, one of
+ * the game's user maps, the game starts on it, as `-map` on its command line does. `onEnd` hears
+ * the game end.
  *
  * The game runs under ASYNCIFY (`engine/display_ein.c`): whenever it has finished a frame, or has
  * polled for a frame's time, it waits for its next turn, which `turn` gives it. Until then the page
@@ -80,33 +80,19 @@ async function fetchFile(path: string): Promise<Uint8Array> {
  * labels a `.wasm` does not matter.
  */
 export async function startEngine(
-  { game, sound, log, kept = [], onKeep, onEnd }: {
-    game: Game;
-    sound?: Sound;
-    log: (line: string) => void;
-    kept?: Kept[];
-    onKeep?: (file: Kept) => void;
-    onEnd: (end: { status: number } | { error: unknown }) => void;
-  },
+  { game, sound, log, kept, onKeep, map, onEnd }: Pick<StartOptions<InstalledGame>, 'game' | 'sound' | 'log' | 'kept' | 'onKeep' | 'map'> & { onEnd(end: End): void },
 ): Promise<Engine> {
   const glueUrl = fileUrl(`${ASSETS}/duke3d.js`);
   const [glue, wasmBinary, files] = await Promise.all([
-    import(glueUrl) as Promise<
-      { default: (options: object) => Promise<DukeModule> }
-    >,
+    import(glueUrl) as Promise<{ default: (options: object) => Promise<DukeModule> }>,
     fetchFile(`${ASSETS}/duke3d.wasm`),
-    Promise.all(
-      game.files.map(async (name) => ({
-        name,
-        data: await fetchFile(`${GAMES}/${game.name}/${name}`),
-      })),
-    ),
+    Promise.all(game.files.map(async (name) => ({ name, data: await fetchFile(`${game.path}/${name}`) }))),
   ]);
 
   // The game's turn, waiting for the page's next one (`einFrame`, display_ein.c).
   let waiting: (() => void) | undefined;
   let ended = false;
-  const end = (outcome: { status: number } | { error: unknown }) => {
+  const end = (outcome: End) => {
     if (ended) return;
     ended = true;
     waiting = undefined;
@@ -115,10 +101,7 @@ export async function startEngine(
   // Called by `ein_wrote` once the game has written the file; `duke` is set by then.
   const einWrote = (path: string) => {
     const name = path.split('/').at(-1) ?? path;
-    onKeep?.({
-      name,
-      data: duke.FS.readFile(`${GAME_DIR}/${name}`) as Uint8Array<ArrayBuffer>,
-    });
+    onKeep?.({ files: [{ name, data: duke.FS.readFile(`${GAME_DIR}/${name}`) }] });
   };
   const duke = await glue.default({
     wasmBinary,
@@ -133,12 +116,8 @@ export async function startEngine(
   // The game's directory, as Duke's was on DOS: its files, by the lower-case names the game opens
   // them by, whatever they are called here, then the player's saves and duke3d.cfg beside them.
   duke.FS.mkdir(GAME_DIR);
-  for (const { name, data } of files) {
-    duke.FS.writeFile(`${GAME_DIR}/${name.toLowerCase()}`, data);
-  }
-  for (const file of kept) {
-    duke.FS.writeFile(`${GAME_DIR}/${file.name}`, file.data);
-  }
+  for (const { name, data } of files) duke.FS.writeFile(`${GAME_DIR}/${name.toLowerCase()}`, data);
+  for (const file of kept) duke.FS.writeFile(`${GAME_DIR}/${file.name}`, file.data);
   duke.FS.chdir(GAME_DIR);
 
   if (sound) duke._ein_audio_rate(sound.context.sampleRate);
@@ -155,10 +134,7 @@ export async function startEngine(
     }
     duke._ein_audio_render(mixBuffer, left.length);
     // HEAP16 is looked up each time: memory growth replaces it.
-    const samples = duke.HEAP16.subarray(
-      mixBuffer >> 1,
-      (mixBuffer >> 1) + left.length * 2,
-    );
+    const samples = duke.HEAP16.subarray(mixBuffer >> 1, (mixBuffer >> 1) + left.length * 2);
     for (let i = 0; i < left.length; i++) {
       left[i] = samples[i * 2] / 32768;
       right[i] = samples[i * 2 + 1] / 32768;
@@ -167,7 +143,7 @@ export async function startEngine(
 
   // The game runs until its first wait, then on its turns.
   try {
-    duke.callMain([]);
+    duke.callMain(map ? ['-map', `${map.toLowerCase()}.map`] : []);
   } catch (error) {
     end({ error });
   }
@@ -175,7 +151,6 @@ export async function startEngine(
   // Calls into a game that has ended are dropped: its memory is gone with it.
   const live = <T>(call: () => T): T | undefined => ended ? undefined : call();
   return {
-    game: game.name,
     width: () => live(() => duke._ein_width()) ?? 0,
     height: () => live(() => duke._ein_height()) ?? 0,
     frames: () => live(() => duke._ein_frames()) ?? 0,
@@ -184,9 +159,7 @@ export async function startEngine(
         // The engine keeps the frame as R, G, B, A bytes already. The heap is looked up each time:
         // memory growth replaces it.
         const at = duke._ein_screen();
-        image.data.set(
-          duke.HEAPU8.subarray(at, at + image.width * image.height * 4),
-        );
+        image.data.set(duke.HEAPU8.subarray(at, at + image.width * image.height * 4));
       });
     },
     turn() {

@@ -1,49 +1,32 @@
 #!ts
-/** duke3d-games — the games in the Duke Nukem 3D page's folder, with each one's title, GRP and files, as the page lists them. */
-import type { CmdReturn, Command, NodeAttrs } from '@ein/client';
+/** duke3d-games — the games in Duke Nukem 3D's games folder and the free one offered, as the Games page and the game's page list them. */
+import type { CmdReturn, Command } from '@ein/client';
+import type { GameEntry } from '@games/api';
 import type { Game } from '@duke3d/api';
-import { byRank, GAMES, GRP_FILE, titleOf } from '@duke3d/games';
+import { findGames } from '@duke3d/catalog';
+import { GAMES } from '@duke3d/games';
 
 const duke3dGames = async (cmd: Command): CmdReturn => {
-  const vfs = cmd.sys.vfs;
-  const games: Game[] = [];
-  // No folder yet is no games yet: the page makes it, and the service fills it.
-  const folders = (await vfs.exists(cmd.access, GAMES)) ? await vfs.children(cmd.access, GAMES) : [];
-  for (const folder of folders) {
-    if (folder.name.startsWith('.')) continue;
-    const node = await vfs.get(cmd.access, `${GAMES}/${folder.name}`).catch(() => undefined);
-    if (node?.type !== 'directory') continue;
-    const files = [];
-    for (const child of await vfs.children(cmd.access, `${GAMES}/${folder.name}`)) {
-      const file = await vfs.get<NodeAttrs & { size?: number }>(cmd.access, `${GAMES}/${folder.name}/${child.name}`).catch(() => undefined);
-      if (file && file.type !== 'directory') files.push({ name: child.name, size: file.attrs.size ?? 0 });
+  const games = await findGames(cmd);
+  if (cmd.json) await cmd.writeJSON(games satisfies Game[] satisfies GameEntry[]);
+  else {
+    for (const game of games) {
+      if (game.state === 'offered') await cmd.writeLn(`${game.id}  ${game.title}  offered, duke3d-fetch ${game.id}`);
+      else await cmd.writeLn(`${game.id}  ${game.title}  ${game.grp}  ${game.files.length} files${game.maps ? `  maps: ${game.maps.join(' ')}` : ''}`);
     }
-    // Chocolate Duke3D plays the first base GRP it finds; the list names the folder by it.
-    const grp = files.filter((file) => GRP_FILE.test(file.name)).sort((a, b) => a.name.localeCompare(b.name))[0];
-    if (!grp) continue;
-    games.push({
-      name: folder.name,
-      title: titleOf(folder.name, grp.size),
-      grp: grp.name,
-      files: files.map((file) => file.name).sort(),
-      size: files.reduce((sum, file) => sum + file.size, 0),
-    });
   }
-  games.sort(byRank);
-
-  if (cmd.json) await cmd.writeJSON(games satisfies Game[]);
-  else for (const game of games) await cmd.writeLn(`${game.name}  ${game.title}  ${game.grp}  ${game.files.length} files`);
   return 0;
 };
 
 duke3dGames.spec = {
   name: 'duke3d-games',
   effect: 'read' as const,
-  description: `List the games in ${GAMES}, which the Duke Nukem 3D page plays: each folder with a duke3d*.grp, the shareware episode first`,
+  description: `List the games in ${GAMES}, each folder with a duke3d*.grp, the shareware episode first; then the free game duke3d-fetch fetches when it is not there yet`,
   args: [],
   flags: [],
   examples: ['duke3d-games'],
-  returns: 'One entry per game: its folder name, title, the GRP it plays, every file in the folder, and their size in bytes.',
+  returns:
+    'One entry per game. An installed one: its id (the folder\'s name), title, state installed, path, detail, cover (its title screen as a PNG data: URL), the GRP it plays, every file in the folder, their size in bytes, and its user maps (the .map files beside the GRP). An offered one: its id, title, state offered, about and download (bytes).',
 };
 
 export default duke3dGames;

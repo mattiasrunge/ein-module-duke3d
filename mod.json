@@ -1,19 +1,23 @@
 {
   "name": "duke3d",
   "version": "0.1.0",
-  "description": "Duke Nukem 3D in EiN: Chocolate Duke3D built to WebAssembly, played on a page of its own",
+  "description": "Duke Nukem 3D in EiN: Chocolate Duke3D built to WebAssembly, played on the Games page",
   "license": "GPL-2.0-or-later AND LicenseRef-BUILD",
-  "coreApi": "^0.15.66",
+  "coreApi": "^0.15.75",
+  "dependencies": {
+    "games": "^0.1.0"
+  },
   "exports": {
     "./api": "./lib/api.ts"
   },
   "imports": {
     "@duke3d/api": "./lib/api.ts",
+    "@duke3d/catalog": "./lib/catalog.ts",
     "@duke3d/games": "./lib/games.ts"
   },
   "ui": {
     "routes": {
-      "/duke3d": "ui/pages/duke3d.tsx"
+      "/games/duke3d/:game": "ui/pages/game.tsx"
     }
   }
 }
