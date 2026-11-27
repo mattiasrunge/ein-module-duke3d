@@ -110,6 +110,9 @@ is put in a folder of its own, named after the file; drop a folder with a
 name. Either appears as a card. The game reads everything in its folder, under
 lower-case names, as it read its directory on DOS.
 
+The Games page's **?** (**How to add games**) says the same in short
+(`etc/games.d/help.md`).
+
 - The whole game: the `DUKE3D.GRP` of your own Duke Nukem 3D 1.3D, or of the
   Atomic Edition 1.4 or 1.5. The list calls them **Duke Nukem 3D** and **Duke
   Nukem 3D: Atomic Edition**.
@@ -178,6 +181,7 @@ Sound** sets the effects' and the music's volume.
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mod.json`                                          | The manifest: the games module it needs, the route of a game's page, and the engine worker.                                                                 |
 | `etc/games.d/games.json`                            | What the games module knows of the module: its title, icon and route, its list and fetch commands, its games folder, and the files it takes when dropped.   |
+| `etc/games.d/help.md`                               | How to add games and user maps, which the Games page's **?** shows.                                                                                         |
 | `ui/pages/game.tsx`                                 | A game's page, `/games/duke3d/<game>`: the games module's page for a game, with the module's adapter.                                                       |
 | `ui/adapter.ts`                                     | The adapter the games module plays the games with: lists them, starts one, and names the saves kept.                                                        |
 | `ui/duke3d/engine.ts`                               | Starts a game in the engine worker: its build, its GRP read as the game asks, its other files and the saves whole, and the keys and mouse as it takes them. |
