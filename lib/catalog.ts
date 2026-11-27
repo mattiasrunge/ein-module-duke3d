@@ -30,6 +30,8 @@ async function readGame(cmd: Command, name: string): Promise<InstalledGame | und
     files: files.map((file) => file.name).sort(),
     size,
     ...(maps.length > 0 ? { maps } : {}),
+    // The shareware episode plays no user maps, so a map dropped for it could never be played.
+    ...(isShareware(grp.size) ? { sealed: true } : {}),
   };
 }
 
