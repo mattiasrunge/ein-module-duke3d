@@ -58,11 +58,13 @@ map**, in the page's header, starts the game on one of its user maps instead
 (below), as `-map` on Duke's command line did.
 
 Click the game to give it the mouse and the keyboard: the browser hides the
-pointer, the mouse turns and aims, the left button fires, and the wheel changes
-weapon, up to the next and down to the one before. The keys are Duke's own,
-which the game's help (F1) shows: the arrows move, Ctrl fires, Space opens, A
-jumps, Z crouches, Shift runs, Alt strafes, Escape opens the menu, F2 saves and
-F3 loads. Escape also gives the mouse back to the browser; click the game to
+pointer, the mouse turns and aims, the left button fires, the right opens, and
+the wheel changes weapon, up to the next and down to the one before. As in the
+Quake module, WASD moves, Space jumps, C crouches and Shift runs; E opens, Q
+kicks, Ctrl fires too, the arrows turn, and Duke's other keys are his own: F2
+saves, F3 loads and Escape opens the menu. The game's help (F1) is Duke's own,
+which shows his keys of 1996, the arrows moving, Space opening, A jumping and Z
+crouching. Escape also gives the mouse back to the browser; click the game to
 hand it over again. While the game has the mouse or the focus it takes its keys
 before EiN does, Alt+letter included. The buttons in the header turn the sound
 off and on and show the game full screen. Quit in the game's menu (or F10)
@@ -84,11 +86,13 @@ The page shows the game at 4:3 in every mode, as a monitor showed Duke's 320
 by 200 and its VESA modes.
 
 A player who has played before starts with their own settings, the keys and the
-mouse as they set them in **Options**; a new one starts with mouse aiming on, so
-the mouse looks up and down, as players have aimed since, and with the buttons
-Duke's own setup gave: the left fires, the right strafes, the middle walks
-forward. The wheel changes weapon for every player whose settings leave it
-bound to nothing, the game's own default.
+mouse as they set them in **Options**; WASD and the keys above are only the
+first settings of a new one, who also starts with mouse aiming on, so the mouse
+looks up and down, as players have aimed since, and with the middle button
+walking forward, as Duke's own setup gave it. The wheel changes weapon for every
+player whose settings leave it bound to nothing, and the right button opens for
+every player whose settings leave it bound to nothing or to strafing, which this
+module gave a new player before.
 
 ## Saved games and settings
 
@@ -204,7 +208,7 @@ Sound** sets the effects' and the music's volume.
 | `engine/portability.patch`                          | Builds with Emscripten where the code took Linux or macOS for granted.                                                                                      |
 | `engine/waits.patch`                                | Lets the page run in the two waits that never did: for the skill's sound to end, and for an answer at a console nobody sees.                                |
 | `engine/files.patch`                                | Tells the page when the game has saved a game or written its settings, so it can keep them, and lets it write them again.                                   |
-| `engine/new-player.patch`                           | Starts a new player with mouse aiming on and DOS's mouse buttons, and gives a wheel bound to nothing the weapons.                                           |
+| `engine/new-player.patch`                           | Starts a new player with WASD's keys and mouse aiming on, gives a wheel bound to nothing the weapons, and the right button opening.                         |
 | `engine/grp-crc.patch`                              | Knows a GRP of a release's size by it, not by reading all of it for its CRC32, so the GRP is read only as the game asks.                                    |
 | `engine/apogee-music.patch`                         | Lets the music's task be scheduled from outside Apogee's sequencer.                                                                                         |
 | `assets/icon.svg`                                   | A radiation trefoil, as Duke's menus have them, drawn for the module: its icon on the Games page, filled with the text colour.                              |

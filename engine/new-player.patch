@@ -1,5 +1,5 @@
 diff --git a/Game/src/config.c b/Game/src/config.c
-index 8e11d88..d1fb5d6 100644
+index 8e11d88..d1663ba 100644
 --- a/Game/src/config.c
 +++ b/Game/src/config.c
 @@ -231,6 +231,8 @@ void CONFIG_SetDefaults( void )
@@ -11,28 +11,60 @@ index 8e11d88..d1fb5d6 100644
     ud.screen_size = 8;
     ud.extended_screen_size = 0;
     ud.screen_tilting = 1;
-@@ -341,6 +343,9 @@ void CONFIG_ReadKeys( void )
+@@ -278,6 +280,26 @@ void CONFIG_SetDefaults( void )
  ===================
  */
  
 +// Whether the player had no duke3d.cfg yet, and starts with the defaults.
 +static int32 newplayer = 0;
 +
- void CONFIG_SetupMouse( int32 scripthandle )
++// A new player's keys where they differ from Duke's own (keydefaults), as
++// Quake's are and EDuke32's modern ones nearly: WASD moves and strafes, Space
++// jumps, C crouches, E opens, Q kicks, and the keys those took move aside.
++static const struct { char *function, *key1, *key2; } wasd[] =
++{
++	{ "Move_Forward", "W", "Up" },
++	{ "Move_Backward", "S", "Down" },
++	{ "Strafe_Left", "A", "," },
++	{ "Strafe_Right", "D", "." },
++	{ "Jump", "Space", "/" },
++	{ "Crouch", "C", "" },
++	{ "Open", "E", "" },
++	{ "Quick_Kick", "Q", "" },
++	{ "Show_Opponents_Weapon", "Y", "" },
++	{ "Hide_Weapon", "", "" },
++};
++
+ void CONFIG_ReadKeys( void )
     {
     int32 i;
-@@ -389,6 +394,22 @@ void CONFIG_SetupMouse( int32 scripthandle )
+@@ -298,6 +320,11 @@ void CONFIG_ReadKeys( void )
+         key2 = (byte) KB_StringToScanCode( keydefaults[i].keyname2 );
+         CONTROL_MapKey( function, key1, key2 );
+ 	}
++	if (newplayer)
++		for(i=0; i<sizeof(wasd)/sizeof(wasd[0]); i++)
++			CONTROL_MapKey( CONFIG_FunctionNameToNum(wasd[i].function),
++				(byte) KB_StringToScanCode( wasd[i].key1 ),
++				(byte) KB_StringToScanCode( wasd[i].key2 ) );
+ 
+    
+        numkeyentries = SCRIPT_NumberEntries( scripthandle, "KeyDefinitions" );
+@@ -389,6 +416,25 @@ void CONFIG_SetupMouse( int32 scripthandle )
  	  //CONTROL_SetAnalogAxisScale( i, scale );
        }
  
-+	// A new player's buttons, as DOS's SETUP gave them: the left fires, the
-+	// right strafes, the middle walks forward.
++	// A new player's buttons: the left fires, the right opens, as E does,
++	// the middle walks forward, as DOS's SETUP had it.
 +	if (newplayer)
 +	{
 +		CONTROL_MapButton( gamefunc_Fire, 0, false );
-+		CONTROL_MapButton( gamefunc_Strafe, 1, false );
 +		CONTROL_MapButton( gamefunc_Move_Forward, 2, false );
 +	}
++	// The right button opens for every player who left it bound to nothing,
++	// or to the strafe DOS's SETUP gave it, which no player chose.
++	if (MouseMapping[1] == -1 || MouseMapping[1] == gamefunc_Strafe)
++		CONTROL_MapButton( gamefunc_Open, 1, false );
 +	// The wheel changes weapon, up to the next and down to the one before,
 +	// for every player whose wheel is bound to nothing (buttons 3 and 4).
 +	if (MouseMapping[3] == -1 && MouseMapping[4] == -1)
@@ -44,7 +76,7 @@ index 8e11d88..d1fb5d6 100644
  	SCRIPT_GetNumber( scripthandle, "Controls","MouseSensitivity_X_Rancid",&mouseSensitivity_X);
  	if(mouseSensitivity_X>63 || mouseSensitivity_X < 0)
  		mouseSensitivity_X  = 15;
-@@ -598,7 +619,8 @@ void CONFIG_ReadSetup( void )
+@@ -598,7 +644,8 @@ void CONFIG_ReadSetup( void )
  
     printf("CONFIG_ReadSetup...\n");
     

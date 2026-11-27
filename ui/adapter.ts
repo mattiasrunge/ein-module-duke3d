@@ -19,7 +19,7 @@ export const adapter: GameAdapter<Game> = {
     const keep = onKeep && ((written: Written) => (heardWritten(game, written), onKeep(written)));
     return await startDuke({ game, onKeep: keep, ...options });
   },
-  help: 'The mouse aims and fires, the wheel changes weapon, the arrows move, Ctrl fires, Space opens, A jumps, Z crouches, Shift runs, F1 is the help, Escape the menu.',
+  help: 'The mouse aims and fires, the right button opens, the wheel changes weapon, WASD moves, Space jumps, C crouches, E opens, Shift runs, Escape is the menu.',
   // The player's keys on the keyboard and the mouse, which the games page shows where a keyboard
   // plays, beside the menu's and the help's keys.
   keys: {

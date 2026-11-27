@@ -45,7 +45,7 @@ RUN git init -q /nuked \
 
 # Builds with Emscripten: files the compiler stopped at, and the page's loops (portability.patch,
 # waits.patch); the page told of saves and duke3d.cfg as the game writes them, as often as it does
-# (files.patch); a new player's mouse, aiming on and its buttons as DOS's SETUP gave them, and the
+# (files.patch); a new player's WASD keys and mouse, aiming on, the right button opening, and the
 # wheel the weapons' when it is bound to nothing (new-player.patch); and a GRP of a release's size known by it, not read whole for its CRC32
 # (grp-crc.patch).
 COPY portability.patch waits.patch files.patch new-player.patch grp-crc.patch /src/

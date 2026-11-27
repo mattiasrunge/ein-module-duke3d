@@ -17,23 +17,23 @@ import type { Game } from '../../lib/api.ts';
 /** The file the game keeps the player's keys and settings in, in their saves folder of the game. */
 const CONFIG = 'duke3d.cfg';
 
-/** The keys of a player who has not played yet, as the game writes them into a new duke3d.cfg (`_functio.h`), by its function's name. */
+/** The keys of a player who has not played yet, by their function's name: Duke's own (`_functio.h`) with WASD's (`engine/new-player.patch`). */
 const DEFAULT_KEYS: Record<string, string[]> = {
-  Move_Forward: ['Up', 'Kpad8'],
-  Move_Backward: ['Down', 'Kpad2'],
+  Move_Forward: ['W', 'Up'],
+  Move_Backward: ['S', 'Down'],
   Turn_Left: ['Left', 'Kpad4'],
   Turn_Right: ['Right', 'Kpad6'],
-  Strafe_Left: [','],
-  Strafe_Right: ['.'],
+  Strafe_Left: ['A', ','],
+  Strafe_Right: ['D', '.'],
   Fire: ['LCtrl', 'RCtrl'],
-  Open: ['Space'],
+  Open: ['E'],
   Run: ['LShift', 'RShift'],
-  Jump: ['A', '/'],
-  Crouch: ['Z'],
+  Jump: ['Space', '/'],
+  Crouch: ['C'],
 };
 
-/** A new player's mouse buttons (`engine/new-player.patch`), from the left button: the left fires, the right strafes, the middle walks forward. */
-const DEFAULT_BUTTONS = ['Fire', 'Strafe', 'Move_Forward'];
+/** A new player's mouse buttons (`engine/new-player.patch`), from the left button: the left fires, the right opens, the middle walks forward. */
+const DEFAULT_BUTTONS = ['Fire', 'Open', 'Move_Forward'];
 
 /** The wheel, buttons 3 and 4, of a player who has bound it to nothing, as the game starts with it (`engine/new-player.patch`). */
 const WHEEL = ['Next_Weapon', 'Previous_Weapon'];
@@ -75,10 +75,15 @@ function bindsOf(config: string): Binds {
   return { keys, buttons };
 }
 
-/** The player's keys and mouse: their configuration's, or the defaults without one, and the wheel as the game starts with it when they left it bound to nothing. */
+/**
+ * The player's keys and mouse: their configuration's, or the defaults without one, and the mouse as
+ * the game starts with it (`engine/new-player.patch`): a wheel bound to nothing changes weapon, and a
+ * right button bound to nothing or to DOS's strafe opens.
+ */
 function bindsFor(config: string | null | undefined): Binds {
   const binds = config ? bindsOf(config) : { keys: new Map(Object.entries(DEFAULT_KEYS)), buttons: [...DEFAULT_BUTTONS] };
   if (!binds.buttons[3] && !binds.buttons[4]) [binds.buttons[3], binds.buttons[4]] = WHEEL;
+  if (!binds.buttons[1] || binds.buttons[1] === 'Strafe') binds.buttons[1] = 'Open';
   return binds;
 }
 
