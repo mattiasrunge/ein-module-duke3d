@@ -1,5 +1,5 @@
 diff --git a/Common.mak b/Common.mak
-index 5d64f50..abef686 100644
+index eb931c3..4509af2 100644
 --- a/Common.mak
 +++ b/Common.mak
 @@ -77,7 +77,10 @@ ifeq ($(PLATFORM),WII)
@@ -14,41 +14,28 @@ index 5d64f50..abef686 100644
          # Self-contained HTML (wasm + game data embedded): runs from file://
          # with no server and no fetch.
          EXESUFFIX := .html
-@@ -428,7 +431,18 @@ else ifeq ($(PLATFORM),EMSCRIPTEN)
+@@ -428,6 +431,16 @@ else ifeq ($(PLATFORM),EMSCRIPTEN)
      # WebAssembly: software renderer only, no x86 asm, no GTK, no netcode,
      # no system libs for vorbis/flac. SDL2 comes from the Emscripten port
      # (-sUSE_SDL=2), not from the system.
--    # EM_GL=1 (WebGL spike): Polymost on Emscripten's legacy GL emulation.
 +    # EIN=1: the game for EiN's engine worker (einlayer.cpp, driver_ein.cpp): Polymost and the
 +    # classic renderer on WebGL 2, no SDL window, events or audio, no game data linked in. The
 +    # fork's game code calls into the NetDuke32 netcode throughout, so that is compiled, over its
 +    # no-op transport (net_transport_stub.cpp): nothing reaches the network.
 +    ifeq (1,$(EIN))
 +        override EM_GL := 1
-+        override EM_WEBGL := 2
 +        override NETDUKE32 := 1
 +        override EM_SINGLE_FILE := 0
 +        override GAME_DATA :=
 +    endif
-+    # EM_GL=1: Polymost on Emscripten's legacy GL emulation.
+     # EM_GL=1: Polymost on WebGL 2, through the fixed-function layer glbuild_ein.cpp.
      ifeq (1,$(EM_GL))
          override POLYMER := 0
-         override USE_LIBVPX := 0
-@@ -1051,18 +1065,33 @@ ifeq ($(RENDERTYPE),SDL)
-         # and silently corrupts memory (the engine froze at the title screen). Size
-         # it for the deepest gameplay path.
-         LINKERFLAGS += -sASYNCIFY_STACK_SIZE=16777216
--        # Expose the MEMFS runtime API so the host page can enumerate loaded GRP
--        # files (settings panel) and write eduke32.cfg before boot.
--        LINKERFLAGS += -sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap
-         ifeq (1,$(EM_GL))
-             EM_WEBGL ?= 2
-             # GL_UNSAFE_OPTS skips re-preparing a draw whose renderer, buffer and matrices
-             # are unchanged, and with it the upload of glFog*/glColor state set in between.
-             LINKERFLAGS += -sLEGACY_GL_EMULATION -sGL_UNSAFE_OPTS=0 -sGL_ENABLE_GET_PROC_ADDRESS -sMAX_WEBGL_VERSION=$(EM_WEBGL)
--            LINKERFLAGS += --pre-js platform/emscripten/webgl-pre.js --profiling-funcs
-+            LINKERFLAGS += --pre-js platform/emscripten/webgl-pre.js
-             COMPILERFLAGS += -DEM_WEBGL=$(EM_WEBGL)
+@@ -1058,12 +1071,26 @@ ifeq ($(RENDERTYPE),SDL)
+             LINKERFLAGS += -sGL_ENABLE_GET_PROC_ADDRESS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
+             LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*'
+             COMPILERFLAGS += -DGLBUILD_EIN
+-            LINKERFLAGS += --profiling-funcs
 +            ifneq (1,$(EIN))
 +                LINKERFLAGS += --profiling-funcs
 +            endif
@@ -59,7 +46,7 @@ index 5d64f50..abef686 100644
 +            # gives Module.canvas, an OffscreenCanvas, which WebGL 2 draws on.
 +            COMPILERFLAGS += -DEDUKE32_EIN
 +            LINKERFLAGS += -sENVIRONMENT=worker -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createEDuke32
-+            LINKERFLAGS += -sINVOKE_RUN=0 -sFORCE_FILESYSTEM=1 -sMIN_WEBGL_VERSION=2
++            LINKERFLAGS += -sINVOKE_RUN=0 -sFORCE_FILESYSTEM=1
 +            LINKERFLAGS += --js-library platform/emscripten/ein-library.js
 +            LINKERFLAGS += -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_ein_key,_ein_char,_ein_mouse,_ein_mouse_button,_ein_wheel,_ein_menu,_ein_write_config,_ein_frames,_ein_audio_rate,_ein_audio_render
 +            LINKERFLAGS += -sEXPORTED_RUNTIME_METHODS=FS,HEAPU8,HEAP16,HEAPU32,callMain,stringToNewUTF8,UTF8ToString
@@ -68,13 +55,16 @@ index 5d64f50..abef686 100644
 +            # files (settings panel) and write eduke32.cfg before boot.
 +            LINKERFLAGS += -sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap
          endif
+-        # Expose the MEMFS runtime API so the host page can enumerate loaded GRP
+-        # files (settings panel) and write eduke32.cfg before boot.
+-        LINKERFLAGS += -sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap
 -        ifeq (1,$(NETDUKE32))
 +        ifeq (1,$(NETDUKE32)$(EIN))
              LINKERFLAGS += --js-library platform/emscripten/net/seam_library.js
              LINKERFLAGS += -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_Net_ReceiveFrame,_Net_PeerEvent,_Net_SetLocalIndex,_NetMenu_SetStatus,_NetMenu_SetLobby,_NetMenu_SetRoster,_NetMenu_SetGrpList,_NetMenu_SetProgress,_NetMenu_OnJoined,_Web_SetMute,_Net_SnapshotReady,_Web_ForceDesync,_Web_SetPredictMode,_Web_SetForensics,_Web_SetLocalBot,_Net_GetBotMask,_Net_GetSpawnTable,_Net_SetSpawnTable,_Web_TestAim,_Web_AimGapAng,_Web_AimGapHoriz,_Web_AimAtNearestPic,_Web_TestFire,_Web_TestDrive,_Web_PicAlive,_Web_NetProbe,_Web_SetStreamMode,_Web_SetMinPlayers,_Web_SetGametype
          endif
 diff --git a/GNUmakefile b/GNUmakefile
-index fc7658b..6abe2a3 100644
+index d3ede26..96a6b61 100644
 --- a/GNUmakefile
 +++ b/GNUmakefile
 @@ -238,7 +238,9 @@ engine_cflags :=
@@ -101,7 +91,7 @@ index fc7658b..6abe2a3 100644
  ifneq ($(RENDERTYPE),WIN)
      engine_excl += winlayer.cpp rawinput.cpp
  endif
-@@ -385,6 +393,11 @@ endif
+@@ -386,6 +394,11 @@ endif
  ifneq ($(RENDERTYPE),SDL)
      audiolib_excl += driver_sdl.cpp
  endif
@@ -113,7 +103,7 @@ index fc7658b..6abe2a3 100644
  
  audiolib_objs := $(call getfiltered,audiolib,*.cpp)
  
-@@ -550,6 +563,7 @@ duke3d_editor_objs := \
+@@ -551,6 +564,7 @@ duke3d_editor_objs := \
  
  duke3d_excl := \
      in_android.cpp \
@@ -121,7 +111,7 @@ index fc7658b..6abe2a3 100644
      m32structures.cpp \
      mdump.cpp \
      startgtk.game.cpp \
-@@ -572,7 +586,10 @@ ifneq (1,$(NETDUKE32))
+@@ -573,7 +587,10 @@ ifneq (1,$(NETDUKE32))
  else
      # NetDuke32 lockstep netcode replaces the mainline snapshot netcode.
      duke3d_excl += network.cpp
@@ -161,7 +151,7 @@ index 4412b6e..535f344 100644
  extern void (*keypresscallback)(int32_t,int32_t);
  extern void (*g_mouseCallback)(int32_t,int32_t);
 diff --git a/source/build/src/baselayer.cpp b/source/build/src/baselayer.cpp
-index 788a144..d77c2fb 100644
+index 92df5b1..ebf692e 100644
 --- a/source/build/src/baselayer.cpp
 +++ b/source/build/src/baselayer.cpp
 @@ -48,7 +48,12 @@ char    g_keyNameTable[NUMKEYS][24];
@@ -177,7 +167,7 @@ index 788a144..d77c2fb 100644
  uint64_t g_frameDelay;
  
  
-@@ -896,8 +901,15 @@ int engineFPSLimit(bool const throttle)
+@@ -894,8 +899,15 @@ int engineFPSLimit(bool const throttle)
      static uint64_t lastFrameTicks;
      static uint64_t lastDelay;
  
@@ -194,10 +184,10 @@ index 788a144..d77c2fb 100644
      g_frameDelay = calcFrameDelay(!throttle || ((unsigned)(r_maxfps-1) < (unsigned)refreshfreq) ? r_maxfps : -1);
  
 diff --git a/source/build/src/polymost.cpp b/source/build/src/polymost.cpp
-index e4d2dc0..9473196 100644
+index d0f097d..a5c2961 100644
 --- a/source/build/src/polymost.cpp
 +++ b/source/build/src/polymost.cpp
-@@ -44,7 +44,12 @@ int32_t r_polygonmode;     // 0:GL_FILL,1:GL_LINE,2:GL_POINT //FUK
+@@ -45,7 +45,12 @@ int32_t r_polygonmode;     // 0:GL_FILL,1:GL_LINE,2:GL_POINT //FUK
  int32_t r_polymostDebug;
  int32_t r_shadeinterpolate = 1;
  int32_t r_skyzbufferhack;
@@ -210,7 +200,7 @@ index e4d2dc0..9473196 100644
  int32_t r_usenewshading = 4;
  int32_t r_usesamplerobjects = 1;
  int32_t r_usetileshades = 1;
-@@ -127,7 +132,11 @@ struct glfiltermodes glfiltermodes[NUMGLFILTERMODES] = { { "GL_NEAREST",
+@@ -128,7 +133,11 @@ struct glfiltermodes glfiltermodes[NUMGLFILTERMODES] = { { "GL_NEAREST",
                                                           { "GL_LINEAR_MIPMAP_LINEAR",   GL_LINEAR_MIPMAP_LINEAR,   GL_LINEAR  } };
  
  int32_t glanisotropy = 16;

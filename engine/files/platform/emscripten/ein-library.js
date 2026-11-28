@@ -6,11 +6,4 @@ addToLibrary({
   ein_canvas: () => {
     specialHTMLTargets['!canvas'] = Module.canvas;
   },
-  // The legacy GL emulation starts on the context made current: Emscripten's own context makers
-  // (Browser.createContext, EGL) run these callbacks, emscripten_webgl_create_context does not.
-  ein_gl_started__deps: ['$Browser'],
-  ein_gl_started: () => {
-    Browser.useWebGL = true;
-    Browser.moduleContextCreatedCallbacks.forEach((callback) => callback());
-  },
 });

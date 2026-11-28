@@ -26,9 +26,10 @@
 // handleevents; it pulls the sound (driver_ein.cpp) and takes the frame from
 // its OffscreenCanvas (Module.canvas) whenever ein_frames moves on.
 //
-// The frame is drawn with WebGL 2 through Emscripten's legacy GL emulation:
-// at 32 bpp by Polymost, at 8 bpp by the classic renderer, whose frame
-// glsurface puts on the screen. The canvas takes the video mode's size.
+// The frame is drawn with WebGL 2, through the fixed-function layer
+// glbuild_ein.cpp: at 32 bpp by Polymost, at 8 bpp by the classic renderer,
+// whose frame glsurface puts on the screen. The canvas takes the video mode's
+// size.
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
@@ -48,6 +49,7 @@
 # include "glad/glad.h"
 # include "glbuild.h"
 # include "glsurface.h"
+# include "glbuild_ein.h"
 #endif
 
 extern "C" void *emscripten_GetProcAddress(const char *name);
@@ -107,10 +109,8 @@ EM_JS(void, ein_wrote, (const char *path), {
     if (Module.einWrote) Module.einWrote(UTF8ToString(path));
 });
 
-// platform/emscripten/ein-library.js: Module.canvas as "!canvas", and the
-// legacy GL emulation started on the context made current.
+// platform/emscripten/ein-library.js: Module.canvas as "!canvas".
 extern "C" void ein_canvas(void);
-extern "C" void ein_gl_started(void);
 
 int32_t wm_msgbox(const char *name, const char *fmt, ...)
 {
@@ -725,12 +725,9 @@ static int einCreateContext(void)
     }
 
     emscripten_webgl_make_context_current(context);
-    ein_gl_started();
 
     gladLoadGLLoader(emscripten_GetProcAddress);
-
-    extern void glbuild_em_init(int webgl2);
-    glbuild_em_init(1);
+    glbuild_ein_init();
 
     LOG_F(INFO, "WebGL context: GL_VERSION \"%s\", glad %d.%d", (char const *)glGetString(GL_VERSION), GLVersion.major, GLVersion.minor);
 
@@ -915,6 +912,7 @@ void videoShowFrame(int32_t w)
         glsurface_blitBuffer();
     }
 
+    glbuild_ein_flush();
     frames++;
     einTurn();
     turnTaken = true;

@@ -1,8 +1,9 @@
 # Builds Duke Nukem 3D on EDuke32 to WebAssembly for the module's engine worker: assets/eduke32.js
 # and assets/eduke32.wasm, single-threaded, with no SDL window, events or audio and no DOM. Polymost
-# and the classic renderer draw with WebGL 2, through Emscripten's legacy GL emulation, on the
-# worker's OffscreenCanvas; the platform layer is einlayer.cpp, the sound card driver_ein.cpp, what
-# the worker asks of the game game_ein.cpp.
+# and the classic renderer draw with WebGL 2 on the worker's OffscreenCanvas, through glbuild_ein.cpp,
+# a layer that gives them the fixed-function OpenGL they use (matrices, immediate mode, client
+# arrays, fog, the alpha test) and merges their draws; the platform layer is einlayer.cpp, the sound
+# card driver_ein.cpp, what the worker asks of the game game_ein.cpp.
 #
 #   docker buildx build --file engine/Containerfile --output type=local,dest=assets engine
 #   podman build --file engine/Containerfile --output type=local,dest=assets engine
@@ -20,8 +21,8 @@ RUN git init -q /src \
   && git -C /src fetch -q --depth 1 https://github.com/DigitalCyberSoft/eduke32-wasm.git ${EDUKE32_COMMIT} \
   && git -C /src checkout -q FETCH_HEAD
 
-# Polymost on Emscripten's legacy GL emulation and WebGL 2 (webgl.patch), and the build for the
-# engine worker (ein.patch); the files these add are in files/.
+# Polymost on WebGL 2 through glbuild_ein.cpp and GLSL ES 3.00 shaders (webgl.patch), and the build
+# for the engine worker (ein.patch); the files these add are in files/.
 COPY webgl.patch ein.patch /
 COPY files/ /src/
 RUN git -C /src apply /webgl.patch /ein.patch \

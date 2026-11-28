@@ -1,5 +1,5 @@
 diff --git a/Common.mak b/Common.mak
-index f6411bf..5d64f50 100644
+index f6411bf..eb931c3 100644
 --- a/Common.mak
 +++ b/Common.mak
 @@ -428,7 +428,13 @@ else ifeq ($(PLATFORM),EMSCRIPTEN)
@@ -7,7 +7,7 @@ index f6411bf..5d64f50 100644
      # no system libs for vorbis/flac. SDL2 comes from the Emscripten port
      # (-sUSE_SDL=2), not from the system.
 -    override USE_OPENGL := 0
-+    # EM_GL=1 (WebGL spike): Polymost on Emscripten's legacy GL emulation.
++    # EM_GL=1: Polymost on WebGL 2, through the fixed-function layer glbuild_ein.cpp.
 +    ifeq (1,$(EM_GL))
 +        override POLYMER := 0
 +        override USE_LIBVPX := 0
@@ -17,136 +17,133 @@ index f6411bf..5d64f50 100644
      override NOASM := 1
      override HAVE_GTK2 := 0
      # Stock WASM has no netcode. The NetDuke32 port re-enables it only when its
-@@ -1048,6 +1054,14 @@ ifeq ($(RENDERTYPE),SDL)
+@@ -1045,6 +1051,15 @@ ifeq ($(RENDERTYPE),SDL)
+         # and silently corrupts memory (the engine froze at the title screen). Size
+         # it for the deepest gameplay path.
+         LINKERFLAGS += -sASYNCIFY_STACK_SIZE=16777216
++        ifeq (1,$(EM_GL))
++            # WebGL 2 only. glad takes its functions from Emscripten's GetProcAddress, and
++            # glbuild_ein.cpp, which never waits for a frame, is left out of ASYNCIFY too
++            # (this list replaces the one above).
++            LINKERFLAGS += -sGL_ENABLE_GET_PROC_ADDRESS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
++            LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*'
++            COMPILERFLAGS += -DGLBUILD_EIN
++            LINKERFLAGS += --profiling-funcs
++        endif
          # Expose the MEMFS runtime API so the host page can enumerate loaded GRP
          # files (settings panel) and write eduke32.cfg before boot.
          LINKERFLAGS += -sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap
-+        ifeq (1,$(EM_GL))
-+            EM_WEBGL ?= 2
-+            # GL_UNSAFE_OPTS skips re-preparing a draw whose renderer, buffer and matrices
-+            # are unchanged, and with it the upload of glFog*/glColor state set in between.
-+            LINKERFLAGS += -sLEGACY_GL_EMULATION -sGL_UNSAFE_OPTS=0 -sGL_ENABLE_GET_PROC_ADDRESS -sMAX_WEBGL_VERSION=$(EM_WEBGL)
-+            LINKERFLAGS += --pre-js platform/emscripten/webgl-pre.js --profiling-funcs
-+            COMPILERFLAGS += -DEM_WEBGL=$(EM_WEBGL)
-+        endif
-         ifeq (1,$(NETDUKE32))
-             LINKERFLAGS += --js-library platform/emscripten/net/seam_library.js
-             LINKERFLAGS += -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_Net_ReceiveFrame,_Net_PeerEvent,_Net_SetLocalIndex,_NetMenu_SetStatus,_NetMenu_SetLobby,_NetMenu_SetRoster,_NetMenu_SetGrpList,_NetMenu_SetProgress,_NetMenu_OnJoined,_Web_SetMute,_Net_SnapshotReady,_Web_ForceDesync,_Web_SetPredictMode,_Web_SetForensics,_Web_SetLocalBot,_Net_GetBotMask,_Net_GetSpawnTable,_Net_SetSpawnTable,_Web_TestAim,_Web_AimGapAng,_Web_AimGapHoriz,_Web_AimAtNearestPic,_Web_TestFire,_Web_TestDrive,_Web_PicAlive,_Web_NetProbe,_Web_SetStreamMode,_Web_SetMinPlayers,_Web_SetGametype
+diff --git a/GNUmakefile b/GNUmakefile
+index fc7658b..d3ede26 100644
+--- a/GNUmakefile
++++ b/GNUmakefile
+@@ -327,6 +327,7 @@ engine_objs := \
+     $(call getfiltered,engine,*.cpp) \
+     polymost1Frag.glsl \
+     polymost1Vert.glsl \
++    $(if $(filter 1,$(EM_GL)),polymost1Es3Frag.glsl polymost1Es3Vert.glsl) \
+ 
+ ifeq (0,$(NOASM))
+   engine_objs += a.nasm
 diff --git a/source/build/src/baselayer.cpp b/source/build/src/baselayer.cpp
-index d1fa14e..788a144 100644
+index d1fa14e..92df5b1 100644
 --- a/source/build/src/baselayer.cpp
 +++ b/source/build/src/baselayer.cpp
-@@ -587,6 +587,14 @@ void fill_glinfo(void)
+@@ -587,6 +587,12 @@ void fill_glinfo(void)
      }
  # endif
  
-+#ifdef __EMSCRIPTEN__
-+    // WebGL 2 has NPOT textures (WebGL 1 only without mipmaps); no texture cache or generic compression under the GL emulation.
-+# if EM_WEBGL >= 2
++#ifdef GLBUILD_EIN
++    // WebGL 2 has NPOT textures; no texture cache or generic compression: nothing is read back from it.
 +    glinfo.texnpot  = 1;
-+# endif
 +    glinfo.texcompr = 0;
 +#endif
 +
  #if defined EDUKE32_GLES
      // don't bother checking because ETC2 et al. are not listed in extensions anyway
      glinfo.texcompr = 1; // !!Bstrstr(glinfo.extensions, "GL_OES_compressed_ETC1_RGB8_texture");
-diff --git a/source/build/src/glbuild.cpp b/source/build/src/glbuild.cpp
-index df6d4ba..199fc89 100644
---- a/source/build/src/glbuild.cpp
-+++ b/source/build/src/glbuild.cpp
-@@ -101,8 +101,48 @@ void buildgl_setDepthFunc(GLenum func)
-     inthash_add(&gl.state[0], GL_DEPTH_FUNC, func, 1);
- }
+diff --git a/source/build/src/glsurface.cpp b/source/build/src/glsurface.cpp
+index 47fbadf..1e9286c 100644
+--- a/source/build/src/glsurface.cpp
++++ b/source/build/src/glsurface.cpp
+@@ -109,6 +109,55 @@ bool glsurface_initialize(vec2_t bufferResolution)
  
-+#ifdef __EMSCRIPTEN__
-+// The legacy GL emulation applies GL_ALPHA_TEST only to its own fixed-function
-+// programs. Polymost's shaders take it as u_alphaRef instead (GL_GREATER only):
-+// the reference while the test is on, -1 while it is off.
-+static GLfloat em_alphaRef;
-+static int em_alphaTest;
-+
-+static void em_updateAlphaRef(void)
-+{
-+    static struct { uint32_t program; GLint loc; GLfloat value; } cache[8];
-+    uint32_t const program = gl.currentShaderProgramID;
-+
-+    if (!program)
-+        return;
-+
-+    int i = 0;
-+    while (i < ARRAY_SSIZE(cache) && cache[i].program && cache[i].program != program)
-+        i++;
-+    if (i == ARRAY_SSIZE(cache))
-+        i = 0, cache[0].program = 0;
-+    if (!cache[i].program)
-+    {
-+        cache[i].program = program;
-+        cache[i].loc = glGetUniformLocation(program, "u_alphaRef");
-+        cache[i].value = -2.f;
-+    }
-+
-+    GLfloat const value = em_alphaTest ? em_alphaRef : -1.f;
-+    if (cache[i].loc >= 0 && cache[i].value != value)
-+    {
-+        glUniform1f(cache[i].loc, value);
-+        cache[i].value = value;
-+    }
-+}
+     glsurface_setPalette(curpalettefaded);
+ 
++#ifdef GLBUILD_EIN
++    // GLSL ES 3.00, for WebGL 2
++    const char* const VERTEX_SHADER_CODE =
++        "#version 300 es\n\
++         \n\
++         in vec4 i_vertPos;\n\
++         in vec2 i_texCoord;\n\
++         \n\
++         out vec2 v_texCoord;\n\
++         \n\
++         void main()\n\
++         {\n\
++             gl_Position = i_vertPos;\n\
++             v_texCoord = i_texCoord;\n\
++         }\n";
++    const char* const FRAGMENT_SHADER_CODE =
++        "#version 300 es\n\
++         precision highp float;\n\
++         \n\
++         //s_texture points to an indexed color texture\n\
++         uniform sampler2D s_texture;\n\
++         //s_palette is the palette texture\n\
++         uniform sampler2D s_palette;\n\
++         \n\
++         in vec2 v_texCoord;\n\
++         out vec4 o_color;\n\
++         \n\
++         const float c_paletteScale = 255.0/256.0;\n\
++         const float c_paletteOffset = 0.5/256.0;\n\
++         uniform vec4 u_colorCorrection;\n\
++         const vec2 c_vec2_zero_one = vec2(0.0, 1.0);\n\
++         const vec4 c_vec4_luma_709 = vec4(0.2126, 0.7152, 0.0722, 0.0);\n\
++         \n\
++         void main()\n\
++         {\n\
++             vec4 color = texture(s_texture, v_texCoord.xy);\n\
++             color.r = c_paletteScale * color.r + c_paletteOffset;\n\
++             color.rgb = texture(s_palette, color.rg).rgb;\n\
++             \n\
++             vec4 v_cc = vec4(u_colorCorrection.x - 1.0, 0.5 * -(u_colorCorrection.y - 1.0), -(u_colorCorrection.z - 1.0), 1.0);\n\
++             o_color = mat4(c_vec2_zero_one.yxxx, c_vec2_zero_one.xyxx, c_vec2_zero_one.xxyx, v_cc.xxxw)\n\
++                     * mat4(u_colorCorrection.ywww, u_colorCorrection.wyww, u_colorCorrection.wwyw, v_cc.yyyw)\n\
++                     * mat4((c_vec4_luma_709.xxxw * v_cc.z) + u_colorCorrection.zwww,\n\
++                            (c_vec4_luma_709.yyyw * v_cc.z) + u_colorCorrection.wzww,\n\
++                            (c_vec4_luma_709.zzzw * v_cc.z) + u_colorCorrection.wwzw,\n\
++                            c_vec2_zero_one.xxxy)\n\
++                     * color;\n\
++         }\n";
++#else
+     const char* const VERTEX_SHADER_CODE =
+         "#version 110\n\
+          \n\
+@@ -158,6 +207,8 @@ bool glsurface_initialize(vec2_t bufferResolution)
+                           * color;\n\
+          }\n";
+ 
 +#endif
 +
- void buildgl_setAlphaFunc(GLenum func, GLfloat ref)
- {
-+#ifdef __EMSCRIPTEN__
-+    em_alphaRef = ref;
-+    em_updateAlphaRef();
-+#endif
-     if ((GLenum)inthash_find(&gl.state[0], GL_ALPHA_TEST_FUNC) == func && inthash_find(&gl.state[0], GL_ALPHA_TEST_REF) == *(int32_t *)&ref)
-         return;
- 
-@@ -113,6 +153,13 @@ void buildgl_setAlphaFunc(GLenum func, GLfloat ref)
- 
- void buildgl_setEnabled(GLenum key)
- {
-+#ifdef __EMSCRIPTEN__
-+    if (key == GL_ALPHA_TEST)
-+    {
-+        em_alphaTest = 1;
-+        em_updateAlphaRef();
-+    }
-+#endif
-     if (inthash_find(&gl.state[0], key) == GL_TRUE)
-         return;
- 
-@@ -123,6 +170,13 @@ void buildgl_setEnabled(GLenum key)
- 
- void buildgl_setDisabled(GLenum key)
- {
-+#ifdef __EMSCRIPTEN__
-+    if (key == GL_ALPHA_TEST)
-+    {
-+        em_alphaTest = 0;
-+        em_updateAlphaRef();
-+    }
-+#endif
-     if (inthash_find(&gl.state[0], key) == GL_FALSE)
-         return;
- 
-@@ -135,6 +189,9 @@ void buildgl_useShaderProgram(uint32_t shaderID)
- {
-     glUseProgram(shaderID);
-     gl.currentShaderProgramID = shaderID;
-+#ifdef __EMSCRIPTEN__
-+    em_updateAlphaRef();
-+#endif
- }
- 
- //POGOTODO: these wrappers won't be needed down the line -- remove them once proper draw call organization is finished
+     if (!glIsProgram(shaderProgramID))
+     {
+         shaderProgramID = glCreateProgram();
 diff --git a/source/build/src/polymost.cpp b/source/build/src/polymost.cpp
-index c2f8df6..e4d2dc0 100644
+index c2f8df6..d0f097d 100644
 --- a/source/build/src/polymost.cpp
 +++ b/source/build/src/polymost.cpp
-@@ -132,6 +132,10 @@ int32_t gltexfiltermode = TEXFILTER_OFF;
+@@ -20,6 +20,7 @@ Ken Silverman's official web site: http://www.advsys.net/ken
+ #include "colmatch.h"
+ #include "texcache.h"
+ #include "hash.h"
++#include "glbuild_ein.h"
+ 
+ #ifdef POLYMOST2
+ int32_t r_enablepolymost2 = 0;
+@@ -132,6 +133,10 @@ int32_t gltexfiltermode = TEXFILTER_OFF;
  #ifdef EDUKE32_GLES
  int32_t glusetexcompr = 2;
  int32_t glusetexcache = 0, glusememcache = 0;
@@ -157,7 +154,24 @@ index c2f8df6..e4d2dc0 100644
  #else
  int32_t glusetexcompr = 1;
  int32_t glusetexcache = 2, glusememcache = 1;
-@@ -911,7 +915,7 @@ void polymost_initdrawpoly(void)
+@@ -174,8 +179,16 @@ static vec2f_t tilesheetHalfTexelSize = { 0.f, 0.f };
+ static int32_t lastbasepal = -1;
+ static GLuint paletteTextureIDs[MAXBASEPALS];
+ static GLuint palswapTextureID = 0;
++#ifdef GLBUILD_EIN
++// GLSL ES 3.00, for WebGL 2 (glbuild_ein.cpp)
++extern char const *polymost1Es3Frag;
++extern char const *polymost1Es3Vert;
++# define polymost1Frag polymost1Es3Frag
++# define polymost1Vert polymost1Es3Vert
++#else
+ extern char const *polymost1Frag;
+ extern char const *polymost1Vert;
++#endif
+ static GLuint polymost1CurrentShaderProgramID = 0;
+ static GLuint polymost1BasicShaderProgramID = 0;
+ static GLuint polymost1ExtendedShaderProgramID = 0;
+@@ -911,7 +924,7 @@ void polymost_initdrawpoly(void)
  
      // reset the sync objects, as old ones we had from any last GL context are gone now
      for (int i=0; i<ARRAY_SSIZE(drawpolyVertsSync); i++)
@@ -166,44 +180,25 @@ index c2f8df6..e4d2dc0 100644
              glDeleteSync(drawpolyVertsSync[i]);
  
      Bmemset(drawpolyVertsSync, 0, sizeof(drawpolyVertsSync));
-diff --git a/source/build/src/polymost1Frag.glsl b/source/build/src/polymost1Frag.glsl
-index 24c2b86..bfad952 100644
---- a/source/build/src/polymost1Frag.glsl
-+++ b/source/build/src/polymost1Frag.glsl
-@@ -52,6 +52,8 @@ const vec4 c_vec4_one = vec4(c_one);
- const float c_wrapThreshold = 0.9;
- 
- uniform vec4 u_colorCorrection;
-+//alpha test reference (GL_GREATER); negative when the test is off
-+uniform float u_alphaRef;
- const vec2 c_vec2_zero_one = vec2(c_zero, c_one);
- const vec4 c_vec4_luma_709 = vec4(0.2126, 0.7152, 0.0722, 0.0);
- 
-@@ -112,11 +114,14 @@ void main()
-     color.a *= v_color.a;
- 
-     vec4 v_cc = vec4(u_colorCorrection.x - c_one, 0.5 * -(u_colorCorrection.y-c_one), -(u_colorCorrection.z-c_one), 1.0);
--    gl_FragData[0] = mat4(c_vec2_zero_one.yxxx, c_vec2_zero_one.xyxx, c_vec2_zero_one.xxyx, v_cc.xxxw)
-+    vec4 outColor = mat4(c_vec2_zero_one.yxxx, c_vec2_zero_one.xyxx, c_vec2_zero_one.xxyx, v_cc.xxxw)
-                    * mat4(u_colorCorrection.ywww, u_colorCorrection.wyww, u_colorCorrection.wwyw, v_cc.yyyw)
-                    * mat4((c_vec4_luma_709.xxxw * v_cc.z) + u_colorCorrection.zwww,
-                           (c_vec4_luma_709.yyyw * v_cc.z) + u_colorCorrection.wzww,
-                           (c_vec4_luma_709.zzzw * v_cc.z) + u_colorCorrection.wwzw,
-                           c_vec2_zero_one.xxxy)
-                    * color;
-+    if (outColor.a <= u_alphaRef)
-+        discard;
-+    gl_FragData[0] = outColor;
- }
+@@ -10041,6 +10054,9 @@ void polymost_initosdfuncs(void)
+         { "r_downsize","controls downsizing factor (quality) for hires textures",(void *) &r_downsize, CVAR_INT|CVAR_FUNCPTR, 0, 5 },
+         { "r_finishbeforeswap", "run glFinish() before swapping when 'r_glfinish' is 1 and when not using KMT vsync", (void *) &r_finishbeforeswap, CVAR_BOOL, 0, 1 },
+         { "r_fullbrights","enable/disable fullbright textures",(void *) &r_fullbrights, CVAR_BOOL, 0, 1 },
++#ifdef GLBUILD_EIN
++        { "r_glbatch", "enable/disable merging consecutive draws with the same state (WebGL)", (void *) &glbuild_ein_batch, CVAR_BOOL | CVAR_NOSAVE, 0, 1 },
++#endif
+         { "r_glfinish", "run glFinish() after swapping buffers when not using KMT vsync", (void *) &r_glfinish, CVAR_BOOL, 0, 1 },
+         { "r_models", "enable/disable model rendering", (void *)&usemodels, CVAR_BOOL, 0, 1 },
+         { "r_nofog", "enable/disable GL fog", (void *)&nofog, CVAR_BOOL, 0, 1},
 diff --git a/source/build/src/sdlayer.cpp b/source/build/src/sdlayer.cpp
-index c0e1e3d..e51dc86 100644
+index c0e1e3d..bba47f9 100644
 --- a/source/build/src/sdlayer.cpp
 +++ b/source/build/src/sdlayer.cpp
 @@ -5,6 +5,11 @@
  #ifdef __EMSCRIPTEN__
  # include <emscripten.h>
  #endif
-+#if defined __EMSCRIPTEN__ && defined EM_WEBGL
++#if defined __EMSCRIPTEN__ && defined GLBUILD_EIN
 +EM_ASYNC_JS(void, em_webgl_yield, (), {
 +    await (Module.webglYield ? Module.webglYield() : new Promise((r) => setTimeout(r, 1)));
 +});
@@ -211,7 +206,15 @@ index c0e1e3d..e51dc86 100644
  
  #include "a.h"
  #include "build.h"
-@@ -1867,17 +1872,26 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
+@@ -30,6 +35,7 @@
+ # include "glad/glad.h"
+ # include "glbuild.h"
+ # include "glsurface.h"
++# include "glbuild_ein.h"
+ #endif
+ 
+ #if defined HAVE_GTK2
+@@ -1867,17 +1873,26 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
              int32_t value;
          } sdlayer_gl_attributes[] =
          {
@@ -229,43 +232,40 @@ index c0e1e3d..e51dc86 100644
                { SDL_GL_STENCIL_SIZE, 1 },
                { SDL_GL_ACCELERATED_VISUAL, 1 },
                { SDL_GL_DEPTH_SIZE, 24 },
-+#if defined __EMSCRIPTEN__ && defined EM_WEBGL
-+              // GLES 3.0 = WebGL 2, GLES 2.0 = WebGL 1 (EGL_CONTEXT_CLIENT_VERSION)
++#if defined __EMSCRIPTEN__ && defined GLBUILD_EIN
++              // GLES 3.0 = WebGL 2 (EGL_CONTEXT_CLIENT_VERSION)
 +              { SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES },
-+              { SDL_GL_CONTEXT_MAJOR_VERSION, EM_WEBGL + 1 },
++              { SDL_GL_CONTEXT_MAJOR_VERSION, 3 },
 +              { SDL_GL_CONTEXT_MINOR_VERSION, 0 },
 +#endif
            };
  
          SDL_GL_ATTRIBUTES(i, sdlayer_gl_attributes);
-@@ -1886,6 +1900,10 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
+@@ -1886,6 +1901,10 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
              so we have to create a new surface in a different format first
              to force the surface we WANT to be recreated instead of reused. */
  
-+#if defined __EMSCRIPTEN__ && defined EM_WEBGL
++#if defined __EMSCRIPTEN__ && defined GLBUILD_EIN
 +        // handleevents() yields once per frame; SDL's swap need not sleep too
 +        SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 +#endif
          sdl_window = SDL_CreateWindow("", g_windowPosValid ? g_windowPos.x : (int)SDL_WINDOWPOS_CENTERED_DISPLAY(display),
                                            g_windowPosValid ? g_windowPos.y : (int)SDL_WINDOWPOS_CENTERED_DISPLAY(display), x, y,
                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | borderless);
-@@ -1903,6 +1921,15 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
+@@ -1903,6 +1922,12 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
          gladLoadGLLoader(SDL_GL_GetProcAddress);
  #else
          gladLoadGLES2Loader(SDL_GL_GetProcAddress);
 +#endif
-+#if defined __EMSCRIPTEN__ && defined EM_WEBGL
++#if defined __EMSCRIPTEN__ && defined GLBUILD_EIN
 +        {
-+            extern void glbuild_em_init(int webgl2);
-+            GLint major = 0;
-+            SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
-+            glbuild_em_init(major >= 3);
++            glbuild_ein_init();
 +            LOG_F(INFO, "WebGL context: GL_VERSION \"%s\", glad %d.%d", (char const *)glGetString(GL_VERSION), GLVersion.major, GLVersion.minor);
 +        }
  #endif
          if (GLVersion.major < 2)
          {
-@@ -2128,6 +2155,10 @@ void videoShowFrame(int32_t w)
+@@ -2128,6 +2153,13 @@ void videoShowFrame(int32_t w)
  
          {
              MICROPROFILE_SCOPEI("Engine", "SDL_GL_SwapWindow", MP_GREEN3);
@@ -273,10 +273,13 @@ index c0e1e3d..e51dc86 100644
 +            // frame hook for the page's measurements
 +            EM_ASM({ if (Module.onEngineFrame) Module.onEngineFrame(1); });
 +#endif
++#ifdef GLBUILD_EIN
++            glbuild_ein_flush();
++#endif
  #if SDL_MAJOR_VERSION >= 2
              SDL_GL_SwapWindow(sdl_window);
  #else
-@@ -2213,6 +2244,7 @@ void videoShowFrame(int32_t w)
+@@ -2213,6 +2245,7 @@ void videoShowFrame(int32_t w)
      // Emscripten: yield to the browser so the presented frame is painted and
      // queued input is processed. The engine loop never blocks on its own, so
      // without this yield the tab would freeze. Requires -sASYNCIFY.
@@ -284,11 +287,11 @@ index c0e1e3d..e51dc86 100644
      emscripten_sleep(1);
  #endif
  #else
-@@ -2940,7 +2972,13 @@ int32_t handleevents(void)
+@@ -2940,7 +2973,13 @@ int32_t handleevents(void)
      // (no repaint, no delivered input, no audio pump). Yield one browser task
      // per pump. Requires -sASYNCIFY. totalclock is time-based so waits still
      // advance; this only hands time back to the browser between polls.
-+#ifdef EM_WEBGL
++#ifdef GLBUILD_EIN
 +    // The page may hand in Module.webglYield (a MessageChannel round trip) to
 +    // measure frame rates without setTimeout's clamping.
 +    em_webgl_yield();

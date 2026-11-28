@@ -7,7 +7,7 @@ out=$1
 
 # EIN=1 (Common.mak): an ES module for a Web Worker, -sMODULARIZE -sEXPORT_ES6
 # -sEXPORT_NAME=createEDuke32 -sENVIRONMENT=worker -sINVOKE_RUN=0 -sEXIT_RUNTIME=1 -sASYNCIFY with a
-# 16 MB stack for it, -sLEGACY_GL_EMULATION on WebGL 2, the _ein_* exports. Four compilers at a time
+# 16 MB stack for it, WebGL 2 through glbuild_ein.cpp, the _ein_* exports. Four compilers at a time
 # keep the build's memory small beside a running EiN.
 make PLATFORM=EMSCRIPTEN EIN=1 -j"${EMCC_CORES:-4}"
 
