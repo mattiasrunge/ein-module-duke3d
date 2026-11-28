@@ -542,6 +542,40 @@ index 8334c80..e60d4b3 100644
          { "mus_al_additivemode", "enable/disable alternate additive AdLib timbre mode", (void*) &AL_AdditiveMode, CVAR_BOOL, 0, 1 },
          { "mus_al_postamp", "controls post-synthesization OPL3 volume amplification", (void*) &AL_PostAmp, CVAR_FLOAT, 1, 6 },
          { "mus_al_stereo", "enable/disable OPL3 stereo mode", (void*) &AL_Stereo, CVAR_BOOL | CVAR_FUNCPTR, 0, 1 },
+diff --git a/source/audiolib/src/vorbis.cpp b/source/audiolib/src/vorbis.cpp
+index a94b8f2..8cb5ff5 100644
+--- a/source/audiolib/src/vorbis.cpp
++++ b/source/audiolib/src/vorbis.cpp
+@@ -372,7 +372,12 @@ int MV_PlayVorbis(char *ptr, uint32_t length, int loopstart, int loopend, int pi
+     //if (vd->task.valid() && !vd->task.ready())
+     //    vd->task.wait();
+ 
++#ifdef EDUKE32_EIN
++    // The engine worker has no threads: the decoder is set up here, before this returns.
++    voice->task = async::spawn(async::inline_scheduler(), [voice]() -> int
++#else
+     voice->task = async::spawn([voice]() -> int
++#endif
+     {
+ #if defined _WIN32
+         debugThreadName("MV_PlayVorbis");
+diff --git a/source/audiolib/src/xmp.cpp b/source/audiolib/src/xmp.cpp
+index 0426e27..e78f551 100644
+--- a/source/audiolib/src/xmp.cpp
++++ b/source/audiolib/src/xmp.cpp
+@@ -117,7 +117,12 @@ int MV_PlayXMP(char *ptr, uint32_t length, int loopstart, int loopend, int pitch
+     xd->ptr = ptr;
+     xd->length = length;
+ 
++#ifdef EDUKE32_EIN
++    // The engine worker has no threads: the decoder is set up here, before this returns.
++    voice->task = async::spawn(async::inline_scheduler(), [voice]() -> int
++#else
+     voice->task = async::spawn([voice]() -> int
++#endif
+     {
+         auto xd = (xmp_data *)voice->rawdataptr;
+         auto ctx = xd->ctx;
 diff --git a/source/build/include/baselayer.h b/source/build/include/baselayer.h
 index 4412b6e..535f344 100644
 --- a/source/build/include/baselayer.h
