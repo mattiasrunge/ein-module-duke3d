@@ -4,8 +4,8 @@ import type { Game } from '../lib/api.ts';
 import { startDuke } from './duke3d/engine.ts';
 import { DukePad, heardKept, heardWritten } from './duke3d/pad.tsx';
 
-/** The files a player keeps of a game, in their saves folder of it: `game0.sav` to `game9.sav`, the game's ten slots, and `duke3d.cfg`. */
-const KEPT = /^(game\d\.sav|duke3d\.cfg)$/;
+/** The files a player keeps of a game, in their saves folder of it: its saves (`save0000.esv` on), and its settings, `eduke32.cfg` and `settings.cfg`, the keys' binds among them. */
+const KEPT = /^(save\d+\.esv|eduke32\.cfg|settings\.cfg)$/;
 
 /** Duke Nukem 3D on the games module's page for a game and its dashboard card. */
 export const adapter: GameAdapter<Game> = {
@@ -32,6 +32,4 @@ export const adapter: GameAdapter<Game> = {
   pointer: true,
   kept: { pattern: KEPT, depth: 0 },
   startsOnMap: true,
-  // 320 by 200 was shown at 4:3, as every other mode the game draws in is.
-  frame: { width: 640, height: 480 },
 };

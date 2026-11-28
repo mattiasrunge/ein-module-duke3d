@@ -2,7 +2,7 @@
  * The PC keyboard's scancodes, set 1, as Duke Nukem 3D read them from the keyboard's port, for the
  * browser's physical keys (`KeyboardEvent.code`), so a key goes up as the same key it went down as,
  * whatever the keyboard layout makes of it. An extended key, one the PC/AT keyboard added, has
- * 0xE0 above its code. Mouse buttons are BUILD's bits.
+ * 0xE0 above its code.
  */
 const SCANCODES: Record<string, number> = {
   Escape: 0x01,
@@ -115,11 +115,39 @@ export function scancode(code: string): number | undefined {
   return SCANCODES[code];
 }
 
-/** BUILD's mouse wheel, as buttons that only go down: up and down. */
-export const WHEEL_UP = 8;
-export const WHEEL_DOWN = 16;
+/** The characters the keys type, unshifted and shifted, on a US keyboard, as the keys themselves are read. */
+const CHARACTERS: Record<string, [string, string]> = {
+  Space: [' ', ' '],
+  Minus: ['-', '_'],
+  Equal: ['=', '+'],
+  BracketLeft: ['[', '{'],
+  BracketRight: [']', '}'],
+  Backslash: ['\\', '|'],
+  Semicolon: [';', ':'],
+  Quote: ["'", '"'],
+  Comma: [',', '<'],
+  Period: ['.', '>'],
+  Slash: ['/', '?'],
+  Digit1: ['1', '!'],
+  Digit2: ['2', '@'],
+  Digit3: ['3', '#'],
+  Digit4: ['4', '$'],
+  Digit5: ['5', '%'],
+  Digit6: ['6', '^'],
+  Digit7: ['7', '&'],
+  Digit8: ['8', '*'],
+  Digit9: ['9', '('],
+  Digit0: ['0', ')'],
+};
 
-/** BUILD's bit for a mouse button (`MouseEvent.button`), as the mouse driver's int 33h gave them: left 1, right 2, middle 4. */
-export function mouseBit(button: number): number | undefined {
-  return button === 0 ? 1 : button === 2 ? 2 : button === 1 ? 4 : undefined;
+/**
+ * The character a physical key types into the game's console and its menus' fields, on a US keyboard
+ * as the keys are read, with Shift held or not. Undefined for a key that types nothing, the
+ * console's key among them; Backspace and Enter are keys the game reads as keys.
+ */
+export function character(code: string, shift: boolean): string | undefined {
+  const letter = /^Key([A-Z])$/.exec(code);
+  if (letter) return shift ? letter[1] : letter[1].toLowerCase();
+  const typed = CHARACTERS[code];
+  return typed && typed[shift ? 1 : 0];
 }

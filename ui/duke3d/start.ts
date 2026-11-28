@@ -4,8 +4,8 @@
  */
 import type { EmscriptenBuild } from '@games/engine';
 
-/** Where the game's files are in Emscripten's file system: its working directory, as Duke's own was, its files and the player's saves and duke3d.cfg. */
+/** Where the game's files are in Emscripten's file system: its working directory, as Duke's own was, its files and the player's saves and settings. */
 export const GAME_DIR = '/duke3d';
 
-/** The engine's build in `assets/` by its URLs, and the game's command line without the program's name: `-map` and a user map, or nothing. */
+/** The engine's build in `assets/` by its URLs, and the game's command line without the program's name: its GRP, and `-map` and a user map. */
 export type DukeStart = { build: EmscriptenBuild; args: string[] };

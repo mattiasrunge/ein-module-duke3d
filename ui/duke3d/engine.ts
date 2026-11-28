@@ -2,7 +2,7 @@ import { fileUrl } from '@ein/ui/lib';
 import type { RunningGame, StartOptions } from '@games/adapter';
 import { fetchFile, startWorkerGame } from '@games/worker';
 import type { InstalledGame } from '../../lib/api.ts';
-import { mouseBit, scancode, WHEEL_DOWN, WHEEL_UP } from './keys.ts';
+import { character, scancode } from './keys.ts';
 import { type DukeStart, GAME_DIR } from './start.ts';
 
 /** Where the module's built engine sits in EiN's tree. */
@@ -15,7 +15,7 @@ const LAZY = /\.grp$/i;
  * Start `game` in the module's engine worker (`engine-worker.ts`). Its files are in the game's
  * directory, by the lower-case names the game opens them by, whatever they are called here: its GRPs
  * read from EiN as the game asks for them, the rest fetched whole, then the player's saves and
- * duke3d.cfg of `game` beside them, which the game's Load menu lists and its start-up reads;
+ * settings of `game` beside them, which the game's Load menu lists and its start-up reads;
  * `onKeep` hears each of them the game writes. The game mixes its sound effects and its music
  * together into `sound`; without it the game is silent. With `map`, one of the game's user maps, the
  * game starts on it, as `-map` on its command line does.
@@ -25,26 +25,34 @@ export async function startDuke(
 ): Promise<RunningGame> {
   const at = (name: string) => `${GAME_DIR}/${name.toLowerCase()}`;
   const whole = await Promise.all(game.files.filter((name) => !LAZY.test(name)).map(async (name) => ({ path: at(name), data: await fetchFile(`${game.path}/${name}`) })));
+  let shift = false;
   return await startWorkerGame<DukeStart>('duke3d', 'engine', {
     payload: {
-      build: { glue: fileUrl(`${ASSETS}/duke3d.js`), wasm: fileUrl(`${ASSETS}/duke3d.wasm`) },
-      args: map ? ['-map', `${map.toLowerCase()}.map`] : [],
+      build: { glue: fileUrl(`${ASSETS}/eduke32.js`), wasm: fileUrl(`${ASSETS}/eduke32.wasm`) },
+      // The game's GRP by name, where a folder could hold more than one.
+      args: ['-gamegrp', game.grp.toLowerCase(), ...(map ? ['-map', `${map.toLowerCase()}.map`] : [])],
     },
     lazy: game.files.filter((name) => LAZY.test(name)).map((name) => ({ path: at(name), url: fileUrl(`${game.path}/${name}`) })),
     files: [...whole, ...kept.map((file) => ({ path: `${GAME_DIR}/${file.name}`, data: file.data }))],
     controls: (post) => ({
+      // Each key goes as the PC's scancode, and the character it types with it, for the console's
+      // and the menus' fields.
       key(pressed, code) {
+        if (code === 'ShiftLeft' || code === 'ShiftRight') shift = pressed;
         const key = scancode(code);
-        if (key !== undefined) post({ type: 'key', pressed, key });
-        return key !== undefined;
+        if (key === undefined) return false;
+        post({ type: 'key', pressed, key });
+        const typed = pressed ? character(code, shift) : undefined;
+        if (typed) post({ type: 'char', character: typed.charCodeAt(0) });
+        return true;
       },
+      // The browser's numbering: 0 left, 1 middle, 2 right, 3 back, 4 forward.
       button(pressed, button) {
-        const bit = mouseBit(button);
-        if (bit !== undefined) post({ type: 'button', pressed, button: bit });
-        return bit !== undefined;
+        if (button > 4) return false;
+        post({ type: 'button', pressed, button });
+        return true;
       },
-      // The wheel is a click that only goes down, as BUILD read it.
-      wheel: (up) => post({ type: 'button', pressed: true, button: up ? WHEEL_UP : WHEEL_DOWN }),
+      wheel: (up) => post({ type: 'input', data: { wheel: up } }),
     }),
   }, { sound, log, onKeep });
 }

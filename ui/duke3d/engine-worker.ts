@@ -1,34 +1,34 @@
 /**
- * The module's engine worker, run by the games module's kit (`serveEngine`): Duke Nukem 3D's engine,
- * Emscripten's build in `assets/`, with the game's GRP read from EiN a piece at a time as it asks.
+ * The module's engine worker, run by the games module's kit (`serveEngine`): EDuke32, Emscripten's
+ * build in `assets/`, with the game's GRP read from EiN a piece at a time as it asks.
  *
- * The game keeps its own loops, so it runs under ASYNCIFY (`engine/display_ein.c`): whenever it has
- * finished a frame, or has polled for a frame's time, it waits for its next tick (`Module.einFrame`),
- * and a tick lets it run until it waits again. Between ticks the keys, the mouse and the kit's other
- * calls reach it; it leaves its frame as R, G, B, A bytes in its memory, which is put on a canvas.
+ * The game keeps its own loops, so it runs under ASYNCIFY (`engine/eduke32/einlayer.cpp`): whenever
+ * it has shown a frame, or has polled for a frame's time, it waits for its next tick
+ * (`Module.einFrame`), and a tick lets it run until it waits again. Between ticks the keys, the
+ * mouse and the kit's other calls reach it. It draws with WebGL 2 on the worker's canvas, Polymost's
+ * true colour or the classic renderer's palette alike, and the canvas is taken as the frame.
  */
 import { type EmscriptenFS, type EmscriptenModule, type Engine, exitStatus, FrameCanvas, heapSound, serveEngine, startEmscripten } from '@games/engine';
 import { type DukeStart, GAME_DIR } from './start.ts';
 
-/** What the engine's platform layer exports (`engine/`), beside Emscripten's own. */
+/** What the engine's platform layer exports (`engine/eduke32/`), beside Emscripten's own. */
 type DukeModule = EmscriptenModule & {
   FS: EmscriptenFS & { chdir(path: string): void };
   callMain(args: string[]): number;
   _ein_key(pressed: number, scancode: number): void;
+  _ein_char(character: number): void;
   _ein_mouse(dx: number, dy: number): void;
-  _ein_mouse_button(pressed: number, bit: number): void;
+  _ein_mouse_button(pressed: number, button: number): void;
+  _ein_wheel(up: number): void;
   _ein_write_config(): void;
   _ein_menu(): number;
-  _ein_screen(): number;
-  _ein_width(): number;
-  _ein_height(): number;
   _ein_frames(): number;
   _ein_audio_rate(rate: number): void;
   _ein_audio_render(at: number, frames: number): void;
 };
 
 let duke: DukeModule;
-const frames = new FrameCanvas();
+const frames = new FrameCanvas(1280, 720);
 let drawn = 0;
 let sound: ((count: number) => Int16Array<ArrayBuffer>) | undefined;
 /** Lets the game, waiting for its next tick, run on; nothing while it runs or once it has ended. */
@@ -62,7 +62,8 @@ const engine: Engine<DukeStart> = {
     };
     const ending = end;
     duke = await startEmscripten<DukeModule>(boot, boot.payload.build, {
-      // The game writes its saves and duke3d.cfg in its directory, by their names.
+      canvas: frames.canvas,
+      // The game writes its saves and its settings in its directory, by their names.
       written: (path) => {
         const name = path.split('/').at(-1) ?? path;
         return { path: `${GAME_DIR}/${name}`, name };
@@ -102,12 +103,17 @@ const engine: Engine<DukeStart> = {
   frame() {
     if (duke._ein_frames() === drawn) return undefined;
     drawn = duke._ein_frames();
-    return frames.rgba(new Uint8Array(duke.HEAPU8.buffer, duke._ein_screen()), duke._ein_width(), duke._ein_height());
+    return frames.take();
   },
   sound: (count) => sound?.(count),
   key: (pressed, scancode) => duke._ein_key(pressed ? 1 : 0, scancode),
+  char: (character) => duke._ein_char(character),
   mouse: (dx, dy) => duke._ein_mouse(dx, dy),
-  button: (pressed, bit) => duke._ein_mouse_button(pressed ? 1 : 0, bit),
+  button: (pressed, button) => duke._ein_mouse_button(pressed ? 1 : 0, button),
+  input(data) {
+    const { wheel } = data as { wheel?: boolean };
+    if (wheel !== undefined) duke._ein_wheel(wheel ? 1 : 0);
+  },
   menu: () => duke._ein_menu() !== 0,
   keep: () => duke._ein_write_config(),
 };
