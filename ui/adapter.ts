@@ -2,6 +2,7 @@ import { execCommand } from '@ein/ui/signals';
 import type { GameAdapter, Written } from '@games/adapter';
 import type { Game } from '../lib/api.ts';
 import { startDuke } from './duke3d/engine.ts';
+import { PacksDialog } from './duke3d/packs.tsx';
 import { DukePad, heardKept, heardWritten } from './duke3d/pad.tsx';
 
 /** The files a player keeps of a game, in their saves folder of it: its saves (`save0000.esv` on), and its settings, `eduke32.cfg` and `settings.cfg`, the keys' binds among them. */
@@ -29,6 +30,8 @@ export const adapter: GameAdapter<Game> = {
       { key: 'F1', icon: 'help', label: 'Help' },
     ],
   },
+  // The add-on packs to fetch, which every game loads.
+  dialogs: [{ label: 'Packs', icon: 'package', has: (game) => game.state === 'installed', Dialog: PacksDialog }],
   pointer: true,
   kept: { pattern: KEPT, depth: 0 },
   startsOnMap: true,

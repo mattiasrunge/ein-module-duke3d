@@ -1,0 +1,65 @@
+/**
+ * The add-on packs for EDuke32 the module offers to fetch, from their makers' own downloads: each is
+ * a zip the game loads beside its GRP (`-g`), its files replacing or adding to the GRP's. They are
+ * fetched only when someone chooses to, into `PACKS`, and every game of the module loads them.
+ */
+import { GAMES } from './games.ts';
+
+/** Where the packs fetched are, beside the games: a folder of the games folder's own, which is no game. */
+export const PACKS = `${GAMES}/.packs`;
+
+/** A pack the module knows: what it is, and where it is fetched from. */
+export type KnownPack = {
+  /** What `duke3d-fetch` takes. */
+  id: string;
+  title: string;
+  /** What it is and who made it. */
+  about: string;
+  /** Its file in `PACKS`. */
+  file: string;
+  url: string;
+  sha256: string;
+  /** Bytes. */
+  size: number;
+};
+
+/** The packs, in the order the game loads them, later ones over earlier ones' files; `bin/duke3d-fetch` has their URLs and SHA-256 too. */
+export const KNOWN_PACKS: KnownPack[] = [
+  {
+    id: 'sc55',
+    title: 'Roland SC-55 music',
+    about: "Duke's songs as a Roland Sound Canvas played them, recorded by MusicallyInspired, in place of the Sound Blaster's FM synthesis.",
+    file: 'duke3d_music-sc55.zip',
+    url: 'https://www.duke4.org/files/nightfright/music/duke3d_music-sc55.zip',
+    sha256: 'e123574fb5629b4871338a83a4ecb882aa6c8f5993f2e90e08439e5faf139087',
+    size: 155_441_427,
+  },
+  {
+    id: 'psx',
+    title: 'PlayStation sounds',
+    about: "The sound effects in the PlayStation release's better quality, by Marphy Black.",
+    file: 'duke3d_psx.zip',
+    url: 'https://www.duke4.org/files/nightfright/related/duke3d_psx.zip',
+    sha256: '20b04f240c78153b824ecb6327bc14493dee61a6ce535c616b25972270fb75e4',
+    size: 7_636_016,
+  },
+  {
+    id: 'voxels',
+    title: 'Voxels',
+    about:
+      'Items, weapons and props as 3D voxel models in place of flat sprites, by ReaperMan, Borion and others. Starting a game takes a few seconds more while the models are built.',
+    file: 'duke3d_voxels.zip',
+    url: 'https://github.com/NightFright2k19/duke3d_voxelpack/releases/download/2.0-rc2/duke3d_voxels.zip',
+    sha256: 'cc2abd00a0fc72a6cbc32026bd7c68db58140f840cb8b94755f07b8e2c25e253',
+    size: 4_432_485,
+  },
+  {
+    id: 'widescreen',
+    title: 'Widescreen fixes',
+    about: 'The status bar, the weapons and the menus drawn for widescreen, and the 1.3D menu font, by NightFright and Fox.',
+    file: 'duke3d_widefix.zip',
+    url: 'https://github.com/NightFright2k19/duke3d_widefix/releases/download/1.6/duke3d_widefix.zip',
+    sha256: 'd5bb376f36d00e08734901e051d8b98108c67d9b239cd221a0643545dbbdb216',
+    size: 1_327_269,
+  },
+];

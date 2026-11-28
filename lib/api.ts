@@ -39,3 +39,16 @@ export type OfferedGame = {
 
 /** A game as `duke3d-games` answers it: in the games folder, or offered to fetch. */
 export type Game = InstalledGame | OfferedGame;
+
+/** A pack as `duke3d-packs` answers it: what it is, and whether it is fetched, which every game then loads. */
+export type Pack = {
+  /** What `duke3d-fetch` takes. */
+  id: string;
+  title: string;
+  about: string;
+  /** Its file, in the packs folder when fetched. */
+  file: string;
+  /** Bytes, fetched or to fetch. */
+  size: number;
+  fetched: boolean;
+};

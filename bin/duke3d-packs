@@ -1,0 +1,25 @@
+#!ts
+/** duke3d-packs — the add-on packs the module offers, and which are fetched, as a game's Packs dialog lists them. */
+import type { CmdReturn, Command } from '@ein/client';
+import type { Pack } from '@duke3d/api';
+import { KNOWN_PACKS, PACKS } from '@duke3d/packs';
+
+const duke3dPacks = async (cmd: Command): CmdReturn => {
+  const here = new Set((await cmd.sys.vfs.children(cmd.access, PACKS).catch(() => [])).map((child) => child.name));
+  const packs: Pack[] = KNOWN_PACKS.map(({ id, title, about, file, size }) => ({ id, title, about, file, size, fetched: here.has(file) }));
+  if (cmd.json) await cmd.writeJSON(packs);
+  else for (const pack of packs) await cmd.writeLn(`${pack.id}  ${pack.title}  ${pack.fetched ? 'fetched' : `duke3d-fetch ${pack.id}`}`);
+  return 0;
+};
+
+duke3dPacks.spec = {
+  name: 'duke3d-packs',
+  effect: 'read' as const,
+  description: `List the add-on packs for Duke Nukem 3D the module offers, in the order the game loads them, and which are fetched into ${PACKS}`,
+  args: [],
+  flags: [],
+  examples: ['duke3d-packs'],
+  returns: 'One entry per pack: its id (what duke3d-fetch takes), title, about, its file, size in bytes, and whether it is fetched; every game loads those fetched.',
+};
+
+export default duke3dPacks;

@@ -8,6 +8,7 @@
     "@duke3d/api": "./lib/api.ts",
     "@duke3d/catalog": "./lib/catalog.ts",
     "@duke3d/games": "./lib/games.ts",
+    "@duke3d/packs": "./lib/packs.ts",
     "@ein/ui/components": "../../src/builtin/ui/src/client/components/mod.ts",
     "@ein/ui/hooks": "../../src/builtin/ui/src/client/hooks/mod.ts",
     "@ein/ui/lib": "../../src/builtin/ui/src/client/lib/mod.ts",

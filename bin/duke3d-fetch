@@ -1,17 +1,67 @@
 #!bash
 # duke3d-fetch — fetches one of the free games duke3d-games offers into its games folder, when
-# someone chooses Fetch on the Games page or the game's own: the shareware episode. The release is
-# fetched, checked against its SHA-256, and unpacked into a game folder of its own; a file already
-# there under the same name is left as it is. It runs as whoever runs it, which has to be the
-# administrator: EiN lets only the administrator fetch URLs.
-arg --desc "Fetch one of the free Duke Nukem 3D games the Games page offers into the games folder"
+# someone chooses Fetch on the Games page or the game's own: the shareware episode; or one of the
+# add-on packs duke3d-packs offers, when someone chooses Fetch in a game's Packs dialog. A game's
+# release is fetched, checked against its SHA-256, and unpacked into a game folder of its own; a file
+# already there under the same name is left as it is. A pack is fetched into the packs folder, and
+# checked. It runs as whoever runs it, which has to be the administrator: EiN lets only the
+# administrator fetch URLs.
+arg --desc "Fetch one of the free Duke Nukem 3D games the Games page offers into the games folder, or an add-on pack into the packs folder"
 arg --effect write
-arg '<game>' string "shareware (Duke Nukem 3D's shareware episode)"
+arg '<game>' string "shareware (Duke Nukem 3D's shareware episode), or a pack: sc55, psx, voxels or widescreen"
 arg --example "duke3d-fetch shareware"
-arg --returns "nothing; the game is in a folder of its own in /groups/users/duke3d, named as the game."
+arg --example "duke3d-fetch sc55"
+arg --returns "nothing; the game is in a folder of its own in /groups/users/duke3d, named as the game, or the pack in /groups/users/duke3d/.packs."
 arg --export
 
 games=/groups/users/duke3d
+packs=$games/.packs
+
+# The packs, as lib/packs.ts lists them for duke3d-packs: their file, where they are fetched from
+# and their SHA-256.
+pack=
+case "$GAME" in
+  sc55)
+    pack=duke3d_music-sc55.zip
+    url=https://www.duke4.org/files/nightfright/music/duke3d_music-sc55.zip
+    sha256=e123574fb5629b4871338a83a4ecb882aa6c8f5993f2e90e08439e5faf139087
+    ;;
+  psx)
+    pack=duke3d_psx.zip
+    url=https://www.duke4.org/files/nightfright/related/duke3d_psx.zip
+    sha256=20b04f240c78153b824ecb6327bc14493dee61a6ce535c616b25972270fb75e4
+    ;;
+  voxels)
+    pack=duke3d_voxels.zip
+    url=https://github.com/NightFright2k19/duke3d_voxelpack/releases/download/2.0-rc2/duke3d_voxels.zip
+    sha256=cc2abd00a0fc72a6cbc32026bd7c68db58140f840cb8b94755f07b8e2c25e253
+    ;;
+  widescreen)
+    pack=duke3d_widefix.zip
+    url=https://github.com/NightFright2k19/duke3d_widefix/releases/download/1.6/duke3d_widefix.zip
+    sha256=d5bb376f36d00e08734901e051d8b98108c67d9b239cd221a0643545dbbdb216
+    ;;
+esac
+if [ -n "$pack" ]; then
+  mkdir -p "$packs"
+  attrs -J 'processing=[]' "$games"
+  # Fetched beside where it goes, on disk: EiN's /tmp is memory, and a pack can be 150 MB.
+  part=$packs/.$pack.part
+  if ! curl -fLs -o "$part" "$url"; then
+    echo "duke3d-fetch: could not fetch $url" >&2
+    [ -e "$part" ] && rm "$part"
+    exit 1
+  fi
+  if ! attrs "$part" | grep -q "$sha256"; then
+    echo "duke3d-fetch: $url is not the pack it should be (its SHA-256 is not $sha256)" >&2
+    rm "$part"
+    exit 1
+  fi
+  mv "$part" "$packs/$pack"
+  echo "duke3d-fetch: $GAME is in $packs/$pack"
+  exit 0
+fi
+
 case "$GAME" in
   shareware)
     # The shareware episode of Duke Nukem 3D 1.3D is 3D Realms', free to play and to give away free
@@ -20,7 +70,7 @@ case "$GAME" in
     sha256=ae65d993ab342b3d859ec4298650498bd0597ae53875197a029f26e76e5f69a6
     ;;
   *)
-    echo "duke3d-fetch: $GAME is not a game it fetches: shareware" >&2
+    echo "duke3d-fetch: $GAME is not a game or a pack it fetches: shareware, sc55, psx, voxels, widescreen" >&2
     exit 2
     ;;
 esac
