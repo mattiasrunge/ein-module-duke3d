@@ -1,11 +1,11 @@
 {
   "name": "duke3d",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Duke Nukem 3D in EiN: EDuke32 built to WebAssembly, drawn with WebGL 2, played on the Games page",
   "license": "GPL-2.0-or-later AND LicenseRef-BUILD",
   "coreApi": "^0.15.77",
   "dependencies": {
-    "games": "^0.1.3-dev.14"
+    "games": "^0.1.3-dev.15"
   },
   "exports": {
     "./api": "./lib/api.ts"
