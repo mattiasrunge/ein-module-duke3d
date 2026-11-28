@@ -92,7 +92,8 @@ filtering, which a new player has trilinear and anisotropic.
 A player who has played before starts with their own settings, the keys and the
 mouse as they set them in **Options**; WASD and the keys above are only the
 first settings of a new one, who also starts with mouse aiming on, so the mouse
-looks up and down, and with the middle button walking forward.
+looks up and down, and with the middle button walking forward. Until you choose a
+name in **Options → Player Setup**, you play under your account's.
 
 ## Saved games and settings
 
@@ -200,7 +201,8 @@ EiN lets only the administrator fetch from the internet) downloads a pack from
 its makers' own site, checks it against its SHA-256 and keeps it in the games
 folder's `.packs`, and **Remove** deletes it. Every game loads the packs fetched,
 from the next time it starts, in the order listed, read from EiN as the game asks
-for their files. In EiN's terminal `duke3d-packs` lists them and `duke3d-fetch
+for their files. Each pack's definitions, what its files replace, are
+loaded as modules of their own, so packs do not hide each other's. In EiN's terminal `duke3d-packs` lists them and `duke3d-fetch
 <pack>` (`sc55`, `psx`, `voxels`, `widescreen`) fetches one.
 
 The High Resolution Pack is not offered: it is made for EDuke32's Polymer

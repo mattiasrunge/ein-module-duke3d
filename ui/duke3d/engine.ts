@@ -25,10 +25,11 @@ const AUTOLOAD = `${GAME_DIR}/autoload`;
  * together into `sound`; without it the game is silent. With `map`, one of the game's user maps, the
  * game starts on it, as `-map` on its command line does. The add-on packs fetched (`duke3d-packs`)
  * are read from EiN as the game asks too, each named on its command line with `-g`, in the order
- * they are listed, so a later one's files win.
+ * they are listed, so a later one's files win, and its definitions files with `-mh`. `name`, the
+ * player's account, names a player whose settings name no one yet (`-name`).
  */
 export async function startDuke(
-  { game, kept, map, sound, log, onKeep }: Pick<StartOptions<InstalledGame>, 'game' | 'kept' | 'map' | 'sound' | 'log' | 'onKeep'>,
+  { game, kept, map, name, sound, log, onKeep }: Pick<StartOptions<InstalledGame>, 'game' | 'kept' | 'map' | 'name' | 'sound' | 'log' | 'onKeep'>,
 ): Promise<RunningGame> {
   const at = (name: string) => `${GAME_DIR}/${name.toLowerCase()}`;
   const whole = await Promise.all(game.files.filter((name) => !LAZY.test(name)).map(async (name) => ({ path: at(name), data: await fetchFile(`${game.path}/${name}`) })));
@@ -45,6 +46,8 @@ export async function startDuke(
         '-gamegrp',
         game.grp.toLowerCase(),
         ...packs.flatMap((pack) => ['-g', `autoload/${pack.file}`]),
+        ...packs.flatMap((pack) => (pack.defs ?? []).flatMap((def) => ['-mh', def])),
+        ...(name ? ['-name', name] : []),
         ...(map ? ['-map', `${map.toLowerCase()}.map`] : []),
       ],
     },

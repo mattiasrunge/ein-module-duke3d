@@ -50,5 +50,7 @@ export type Pack = {
   file: string;
   /** Bytes, fetched or to fetch. */
   size: number;
+  /** Its definitions files, which the game loads as modules of their own. */
+  defs?: string[];
   fetched: boolean;
 };

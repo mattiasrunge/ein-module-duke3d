@@ -21,6 +21,11 @@ export type KnownPack = {
   sha256: string;
   /** Bytes. */
   size: number;
+  /**
+   * Its definitions files, which say what its files replace and add: each loaded as a module of
+   * its own (`-mh`), as the `duke3d.def` packs bring would hide each other's.
+   */
+  defs?: string[];
 };
 
 /** The packs, in the order the game loads them, later ones over earlier ones' files; `bin/duke3d-fetch` has their URLs and SHA-256 too. */
@@ -52,6 +57,7 @@ export const KNOWN_PACKS: KnownPack[] = [
     url: 'https://github.com/NightFright2k19/duke3d_voxelpack/releases/download/2.0-rc2/duke3d_voxels.zip',
     sha256: 'cc2abd00a0fc72a6cbc32026bd7c68db58140f840cb8b94755f07b8e2c25e253',
     size: 4_432_485,
+    defs: ['duke3d_voxels.def', 'duke3d_maphacks.def'],
   },
   {
     id: 'widescreen',
@@ -61,5 +67,6 @@ export const KNOWN_PACKS: KnownPack[] = [
     url: 'https://github.com/NightFright2k19/duke3d_widefix/releases/download/1.6/duke3d_widefix.zip',
     sha256: 'd5bb376f36d00e08734901e051d8b98108c67d9b239cd221a0643545dbbdb216',
     size: 1_327_269,
+    defs: ['duke3d_widefix.def'],
   },
 ];
