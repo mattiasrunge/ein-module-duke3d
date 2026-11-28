@@ -63,6 +63,8 @@ const engine: Engine<DukeStart> = {
     const ending = end;
     duke = await startEmscripten<DukeModule>(boot, boot.payload.build, {
       canvas: frames.canvas,
+      // The game reads its GRP in many small pieces as it starts: small chunks fetch less of it.
+      chunk: 256 * 1024,
       // The game writes its saves and its settings in its directory, by their names.
       written: (path) => {
         const name = path.split('/').at(-1) ?? path;

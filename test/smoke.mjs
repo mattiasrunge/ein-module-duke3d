@@ -212,7 +212,7 @@ try {
   console.log(`signed in, at ${await evaluate('location.pathname')}`);
 
   // How /file/ labels the module's assets: the page must not depend on it, but it is worth seeing.
-  for (const name of ['duke3d.js', 'duke3d.wasm']) {
+  for (const name of ['eduke32.js', 'eduke32.wasm']) {
     const type = await evaluate(`fetch('/file/usr/modules/duke3d/assets/${name}', { method: 'HEAD' }).then((r) => r.status + ' ' + r.headers.get('content-type'))`);
     console.log(`/file/ serves ${name} as ${type}`);
   }

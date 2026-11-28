@@ -1,67 +1,38 @@
-# Builds Duke Nukem 3D (BelgianChocolateDuke3D) to WebAssembly for the module's engine worker:
-# assets/duke3d.js and assets/duke3d.wasm, single-threaded, with no SDL and no DOM. The display,
-# keyboard, mouse and timer are display_ein.c, the sound card dsl_ein.c, the music music_ein.c, which
-# plays the songs as a Sound Blaster 16 did, through Apogee's own MIDI sequencer and AdLib driver from
-# the original Chocolate Duke3D into Nuked OPL3, and what the worker asks of the game game_ein.c.
+# Builds Duke Nukem 3D on EDuke32 to WebAssembly for the module's engine worker: assets/eduke32.js
+# and assets/eduke32.wasm, single-threaded, with no SDL window, events or audio and no DOM. Polymost
+# and the classic renderer draw with WebGL 2, through Emscripten's legacy GL emulation, on the
+# worker's OffscreenCanvas; the platform layer is einlayer.cpp, the sound card driver_ein.cpp, what
+# the worker asks of the game game_ein.cpp.
 #
 #   docker buildx build --file engine/Containerfile --output type=local,dest=assets engine
+#   podman build --file engine/Containerfile --output type=local,dest=assets engine
 #
 # The local exporter writes the files on the host, so no bind mount needs to be writable.
-# Run from the repository's root directory; scripts/build-engine.sh does exactly this.
+# Run from the repository's root directory.
 
 # emsdk 6.0.13, the multi-platform index (linux/amd64 and linux/arm64).
 FROM docker.io/emscripten/emsdk:6.0.13@sha256:fb7864e398acfda863dfcea78b8bc8adad359fa60c6a0bbeb845931de64aa68a AS build
 
-# BelgianChocolateDuke3D, pinned: Chocolate Duke3D made 64-bit clean, its regressions fixed and its
-# dead code gone. The game's code is GPL-2.0-or-later, the engine's under Ken Silverman's BUILD
-# licence.
-ARG BELGIAN_COMMIT=1833c94be7c2fdbc9b0edf88d1e8d88f73b44dd8
-RUN git init -q /belgian \
-  && git -C /belgian fetch -q --depth 1 https://github.com/GPSnoopy/BelgianChocolateDuke3D.git ${BELGIAN_COMMIT} \
-  && git -C /belgian checkout -q FETCH_HEAD \
-  && mkdir -p /src \
-  && cp -r /belgian/Engine /belgian/Game /src/
+# DigitalCyberSoft's EDuke32 for WebAssembly, pinned. GPL-2.0-or-later; the engine's BUILD code under
+# Ken Silverman's BUILD licence.
+ARG EDUKE32_COMMIT=37b56eefaf8125eaa853c417512019cc7ad94b81
+RUN git init -q /src \
+  && git -C /src fetch -q --depth 1 https://github.com/DigitalCyberSoft/eduke32-wasm.git ${EDUKE32_COMMIT} \
+  && git -C /src checkout -q FETCH_HEAD
 
-# The original Chocolate Duke3D, pinned, for the AdLib MIDI driver, its timbres and the sequencer
-# that BelgianChocolateDuke3D left out for SDL_mixer. Apogee's, GPL-2.0-or-later.
-ARG CHOCOLATE_COMMIT=1cfa1909aa1f5a5ab159301044ca499673bc2283
-COPY apogee-music.patch /
-RUN git init -q /chocolate \
-  && git -C /chocolate fetch -q --depth 1 https://github.com/fabiensanglard/chocolate_duke3D.git ${CHOCOLATE_COMMIT} \
-  && git -C /chocolate checkout -q FETCH_HEAD \
-  && git -C /chocolate apply /apogee-music.patch \
-  && mkdir -p /src/al \
-  && for file in al_midi.c _al_midi.h al_midi.h gmtimbre.c midi.c _midi.h midi.h task_man.h standard.h sndcards.h; do \
-       cp /chocolate/Game/src/audiolib/$file /src/al/; \
-     done
-
-# Nuked OPL3, pinned: the Sound Blaster 16's FM chip. LGPL-2.1-or-later.
-ARG NUKED_COMMIT=765ec962e473aeb767e4cba74ffdc8f588ffbfe8
-RUN git init -q /nuked \
-  && git -C /nuked fetch -q --depth 1 https://github.com/nukeykt/Nuked-OPL3.git ${NUKED_COMMIT} \
-  && git -C /nuked checkout -q FETCH_HEAD \
-  && mkdir -p /src/opl \
-  && cp /nuked/opl3.c /nuked/opl3.h /src/opl/
-
-# Builds with Emscripten: files the compiler stopped at, and the page's loops (portability.patch,
-# waits.patch); the page told of saves and duke3d.cfg as the game writes them, as often as it does
-# (files.patch); a new player's WASD keys and mouse, aiming on, the right button opening, and the
-# wheel the weapons' when it is bound to nothing (new-player.patch); and a GRP of a release's size known by it, not read whole for its CRC32
-# (grp-crc.patch).
-COPY portability.patch waits.patch files.patch new-player.patch grp-crc.patch /src/
-RUN cd /src && for patch in portability waits files new-player grp-crc; do git apply $patch.patch; done
+# Polymost on Emscripten's legacy GL emulation and WebGL 2 (webgl.patch), and the build for the
+# engine worker (ein.patch); the files these add are in files/.
+COPY webgl.patch ein.patch /
+COPY files/ /src/
+RUN git -C /src apply /webgl.patch /ein.patch \
+  && rm -rf /src/.git \
+  && printf 'VC_REV := %s\nVC_HASH := ein\n' "$(echo ${EDUKE32_COMMIT} | cut -c1-9)" > /src/EDUKE32_REVISION.mak
 
 WORKDIR /src
-# This build's own compatibility header in place of Chocolate Duke3D's, the platform layer, the
-# little of SDL and DOS the game's and Apogee's code still name, and the build itself.
-COPY unix_compat.h Engine/src/
-COPY include include/
-COPY al/ al/
-COPY display_ein.c dsl_ein.c music_ein.c game_ein.c build.sh ./
-
+COPY build.sh /
 RUN mkdir -p /out \
-  && sh build.sh /out \
-  && echo "BelgianChocolateDuke3D ${BELGIAN_COMMIT} with portability.patch, waits.patch, files.patch, new-player.patch and grp-crc.patch, Chocolate Duke3D ${CHOCOLATE_COMMIT}'s AdLib music with apogee-music.patch, Nuked OPL3 ${NUKED_COMMIT}, emsdk 6.0.13" > /out/duke3d-build.txt
+  && sh /build.sh /out \
+  && echo "EDuke32 for WebAssembly (DigitalCyberSoft/eduke32-wasm) ${EDUKE32_COMMIT} with webgl.patch, ein.patch and files/, emsdk 6.0.13" > /out/eduke32-build.txt
 
 FROM scratch
 COPY --from=build /out/ /

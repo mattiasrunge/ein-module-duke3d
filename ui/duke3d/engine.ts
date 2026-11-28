@@ -29,8 +29,9 @@ export async function startDuke(
   return await startWorkerGame<DukeStart>('duke3d', 'engine', {
     payload: {
       build: { glue: fileUrl(`${ASSETS}/eduke32.js`), wasm: fileUrl(`${ASSETS}/eduke32.wasm`) },
-      // The game's GRP by name, where a folder could hold more than one.
-      args: ['-gamegrp', game.grp.toLowerCase(), ...(map ? ['-map', `${map.toLowerCase()}.map`] : [])],
+      // Its files and the player's in the working directory, and the game's GRP by name, where a
+      // folder could hold more than one.
+      args: ['-usecwd', '-gamegrp', game.grp.toLowerCase(), ...(map ? ['-map', `${map.toLowerCase()}.map`] : [])],
     },
     lazy: game.files.filter((name) => LAZY.test(name)).map((name) => ({ path: at(name), url: fileUrl(`${game.path}/${name}`) })),
     files: [...whole, ...kept.map((file) => ({ path: `${GAME_DIR}/${file.name}`, data: file.data }))],

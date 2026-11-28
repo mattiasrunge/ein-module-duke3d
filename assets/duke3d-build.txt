@@ -1,1 +1,0 @@
-BelgianChocolateDuke3D 1833c94be7c2fdbc9b0edf88d1e8d88f73b44dd8 with portability.patch, waits.patch, files.patch, new-player.patch and grp-crc.patch, Chocolate Duke3D 1cfa1909aa1f5a5ab159301044ca499673bc2283's AdLib music with apogee-music.patch, Nuked OPL3 765ec962e473aeb767e4cba74ffdc8f588ffbfe8, emsdk 6.0.13

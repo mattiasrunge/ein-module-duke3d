@@ -1,0 +1,403 @@
+diff --git a/Common.mak b/Common.mak
+index f6411bf..5d64f50 100644
+--- a/Common.mak
++++ b/Common.mak
+@@ -428,7 +428,13 @@ else ifeq ($(PLATFORM),EMSCRIPTEN)
+     # WebAssembly: software renderer only, no x86 asm, no GTK, no netcode,
+     # no system libs for vorbis/flac. SDL2 comes from the Emscripten port
+     # (-sUSE_SDL=2), not from the system.
+-    override USE_OPENGL := 0
++    # EM_GL=1 (WebGL spike): Polymost on Emscripten's legacy GL emulation.
++    ifeq (1,$(EM_GL))
++        override POLYMER := 0
++        override USE_LIBVPX := 0
++    else
++        override USE_OPENGL := 0
++    endif
+     override NOASM := 1
+     override HAVE_GTK2 := 0
+     # Stock WASM has no netcode. The NetDuke32 port re-enables it only when its
+@@ -1048,6 +1054,14 @@ ifeq ($(RENDERTYPE),SDL)
+         # Expose the MEMFS runtime API so the host page can enumerate loaded GRP
+         # files (settings panel) and write eduke32.cfg before boot.
+         LINKERFLAGS += -sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap
++        ifeq (1,$(EM_GL))
++            EM_WEBGL ?= 2
++            # GL_UNSAFE_OPTS skips re-preparing a draw whose renderer, buffer and matrices
++            # are unchanged, and with it the upload of glFog*/glColor state set in between.
++            LINKERFLAGS += -sLEGACY_GL_EMULATION -sGL_UNSAFE_OPTS=0 -sGL_ENABLE_GET_PROC_ADDRESS -sMAX_WEBGL_VERSION=$(EM_WEBGL)
++            LINKERFLAGS += --pre-js platform/emscripten/webgl-pre.js --profiling-funcs
++            COMPILERFLAGS += -DEM_WEBGL=$(EM_WEBGL)
++        endif
+         ifeq (1,$(NETDUKE32))
+             LINKERFLAGS += --js-library platform/emscripten/net/seam_library.js
+             LINKERFLAGS += -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_Net_ReceiveFrame,_Net_PeerEvent,_Net_SetLocalIndex,_NetMenu_SetStatus,_NetMenu_SetLobby,_NetMenu_SetRoster,_NetMenu_SetGrpList,_NetMenu_SetProgress,_NetMenu_OnJoined,_Web_SetMute,_Net_SnapshotReady,_Web_ForceDesync,_Web_SetPredictMode,_Web_SetForensics,_Web_SetLocalBot,_Net_GetBotMask,_Net_GetSpawnTable,_Net_SetSpawnTable,_Web_TestAim,_Web_AimGapAng,_Web_AimGapHoriz,_Web_AimAtNearestPic,_Web_TestFire,_Web_TestDrive,_Web_PicAlive,_Web_NetProbe,_Web_SetStreamMode,_Web_SetMinPlayers,_Web_SetGametype
+diff --git a/source/build/src/baselayer.cpp b/source/build/src/baselayer.cpp
+index d1fa14e..788a144 100644
+--- a/source/build/src/baselayer.cpp
++++ b/source/build/src/baselayer.cpp
+@@ -587,6 +587,14 @@ void fill_glinfo(void)
+     }
+ # endif
+ 
++#ifdef __EMSCRIPTEN__
++    // WebGL 2 has NPOT textures (WebGL 1 only without mipmaps); no texture cache or generic compression under the GL emulation.
++# if EM_WEBGL >= 2
++    glinfo.texnpot  = 1;
++# endif
++    glinfo.texcompr = 0;
++#endif
++
+ #if defined EDUKE32_GLES
+     // don't bother checking because ETC2 et al. are not listed in extensions anyway
+     glinfo.texcompr = 1; // !!Bstrstr(glinfo.extensions, "GL_OES_compressed_ETC1_RGB8_texture");
+diff --git a/source/build/src/glbuild.cpp b/source/build/src/glbuild.cpp
+index df6d4ba..199fc89 100644
+--- a/source/build/src/glbuild.cpp
++++ b/source/build/src/glbuild.cpp
+@@ -101,8 +101,48 @@ void buildgl_setDepthFunc(GLenum func)
+     inthash_add(&gl.state[0], GL_DEPTH_FUNC, func, 1);
+ }
+ 
++#ifdef __EMSCRIPTEN__
++// The legacy GL emulation applies GL_ALPHA_TEST only to its own fixed-function
++// programs. Polymost's shaders take it as u_alphaRef instead (GL_GREATER only):
++// the reference while the test is on, -1 while it is off.
++static GLfloat em_alphaRef;
++static int em_alphaTest;
++
++static void em_updateAlphaRef(void)
++{
++    static struct { uint32_t program; GLint loc; GLfloat value; } cache[8];
++    uint32_t const program = gl.currentShaderProgramID;
++
++    if (!program)
++        return;
++
++    int i = 0;
++    while (i < ARRAY_SSIZE(cache) && cache[i].program && cache[i].program != program)
++        i++;
++    if (i == ARRAY_SSIZE(cache))
++        i = 0, cache[0].program = 0;
++    if (!cache[i].program)
++    {
++        cache[i].program = program;
++        cache[i].loc = glGetUniformLocation(program, "u_alphaRef");
++        cache[i].value = -2.f;
++    }
++
++    GLfloat const value = em_alphaTest ? em_alphaRef : -1.f;
++    if (cache[i].loc >= 0 && cache[i].value != value)
++    {
++        glUniform1f(cache[i].loc, value);
++        cache[i].value = value;
++    }
++}
++#endif
++
+ void buildgl_setAlphaFunc(GLenum func, GLfloat ref)
+ {
++#ifdef __EMSCRIPTEN__
++    em_alphaRef = ref;
++    em_updateAlphaRef();
++#endif
+     if ((GLenum)inthash_find(&gl.state[0], GL_ALPHA_TEST_FUNC) == func && inthash_find(&gl.state[0], GL_ALPHA_TEST_REF) == *(int32_t *)&ref)
+         return;
+ 
+@@ -113,6 +153,13 @@ void buildgl_setAlphaFunc(GLenum func, GLfloat ref)
+ 
+ void buildgl_setEnabled(GLenum key)
+ {
++#ifdef __EMSCRIPTEN__
++    if (key == GL_ALPHA_TEST)
++    {
++        em_alphaTest = 1;
++        em_updateAlphaRef();
++    }
++#endif
+     if (inthash_find(&gl.state[0], key) == GL_TRUE)
+         return;
+ 
+@@ -123,6 +170,13 @@ void buildgl_setEnabled(GLenum key)
+ 
+ void buildgl_setDisabled(GLenum key)
+ {
++#ifdef __EMSCRIPTEN__
++    if (key == GL_ALPHA_TEST)
++    {
++        em_alphaTest = 0;
++        em_updateAlphaRef();
++    }
++#endif
+     if (inthash_find(&gl.state[0], key) == GL_FALSE)
+         return;
+ 
+@@ -135,6 +189,9 @@ void buildgl_useShaderProgram(uint32_t shaderID)
+ {
+     glUseProgram(shaderID);
+     gl.currentShaderProgramID = shaderID;
++#ifdef __EMSCRIPTEN__
++    em_updateAlphaRef();
++#endif
+ }
+ 
+ //POGOTODO: these wrappers won't be needed down the line -- remove them once proper draw call organization is finished
+diff --git a/source/build/src/polymost.cpp b/source/build/src/polymost.cpp
+index c2f8df6..e4d2dc0 100644
+--- a/source/build/src/polymost.cpp
++++ b/source/build/src/polymost.cpp
+@@ -132,6 +132,10 @@ int32_t gltexfiltermode = TEXFILTER_OFF;
+ #ifdef EDUKE32_GLES
+ int32_t glusetexcompr = 2;
+ int32_t glusetexcache = 0, glusememcache = 0;
++#elif defined __EMSCRIPTEN__
++int32_t glusetexcompr = 0;
++int32_t glusetexcache = 0, glusememcache = 0;
++static int32_t lastglpolygonmode = 0; //FUK
+ #else
+ int32_t glusetexcompr = 1;
+ int32_t glusetexcache = 2, glusememcache = 1;
+@@ -911,7 +915,7 @@ void polymost_initdrawpoly(void)
+ 
+     // reset the sync objects, as old ones we had from any last GL context are gone now
+     for (int i=0; i<ARRAY_SSIZE(drawpolyVertsSync); i++)
+-        if (glIsSync(drawpolyVertsSync[i]))
++        if (glinfo.sync && glIsSync(drawpolyVertsSync[i]))
+             glDeleteSync(drawpolyVertsSync[i]);
+ 
+     Bmemset(drawpolyVertsSync, 0, sizeof(drawpolyVertsSync));
+diff --git a/source/build/src/polymost1Frag.glsl b/source/build/src/polymost1Frag.glsl
+index 24c2b86..bfad952 100644
+--- a/source/build/src/polymost1Frag.glsl
++++ b/source/build/src/polymost1Frag.glsl
+@@ -52,6 +52,8 @@ const vec4 c_vec4_one = vec4(c_one);
+ const float c_wrapThreshold = 0.9;
+ 
+ uniform vec4 u_colorCorrection;
++//alpha test reference (GL_GREATER); negative when the test is off
++uniform float u_alphaRef;
+ const vec2 c_vec2_zero_one = vec2(c_zero, c_one);
+ const vec4 c_vec4_luma_709 = vec4(0.2126, 0.7152, 0.0722, 0.0);
+ 
+@@ -112,11 +114,14 @@ void main()
+     color.a *= v_color.a;
+ 
+     vec4 v_cc = vec4(u_colorCorrection.x - c_one, 0.5 * -(u_colorCorrection.y-c_one), -(u_colorCorrection.z-c_one), 1.0);
+-    gl_FragData[0] = mat4(c_vec2_zero_one.yxxx, c_vec2_zero_one.xyxx, c_vec2_zero_one.xxyx, v_cc.xxxw)
++    vec4 outColor = mat4(c_vec2_zero_one.yxxx, c_vec2_zero_one.xyxx, c_vec2_zero_one.xxyx, v_cc.xxxw)
+                    * mat4(u_colorCorrection.ywww, u_colorCorrection.wyww, u_colorCorrection.wwyw, v_cc.yyyw)
+                    * mat4((c_vec4_luma_709.xxxw * v_cc.z) + u_colorCorrection.zwww,
+                           (c_vec4_luma_709.yyyw * v_cc.z) + u_colorCorrection.wzww,
+                           (c_vec4_luma_709.zzzw * v_cc.z) + u_colorCorrection.wwzw,
+                           c_vec2_zero_one.xxxy)
+                    * color;
++    if (outColor.a <= u_alphaRef)
++        discard;
++    gl_FragData[0] = outColor;
+ }
+diff --git a/source/build/src/sdlayer.cpp b/source/build/src/sdlayer.cpp
+index c0e1e3d..e51dc86 100644
+--- a/source/build/src/sdlayer.cpp
++++ b/source/build/src/sdlayer.cpp
+@@ -5,6 +5,11 @@
+ #ifdef __EMSCRIPTEN__
+ # include <emscripten.h>
+ #endif
++#if defined __EMSCRIPTEN__ && defined EM_WEBGL
++EM_ASYNC_JS(void, em_webgl_yield, (), {
++    await (Module.webglYield ? Module.webglYield() : new Promise((r) => setTimeout(r, 1)));
++});
++#endif
+ 
+ #include "a.h"
+ #include "build.h"
+@@ -1867,17 +1872,26 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
+             int32_t value;
+         } sdlayer_gl_attributes[] =
+         {
++#if !defined __EMSCRIPTEN__
++              // Emscripten's EGL takes no context flags
+               { SDL_GL_CONTEXT_FLAGS,
+ #ifndef NDEBUG
+               SDL_GL_CONTEXT_DEBUG_FLAG |
+ #endif
+               SDL_GL_CONTEXT_ROBUST_ACCESS_FLAG },
+               { SDL_GL_CONTEXT_RESET_NOTIFICATION, SDL_GL_CONTEXT_RESET_LOSE_CONTEXT },
++#endif
+               { SDL_GL_DOUBLEBUFFER, 1 },
+ 
+               { SDL_GL_STENCIL_SIZE, 1 },
+               { SDL_GL_ACCELERATED_VISUAL, 1 },
+               { SDL_GL_DEPTH_SIZE, 24 },
++#if defined __EMSCRIPTEN__ && defined EM_WEBGL
++              // GLES 3.0 = WebGL 2, GLES 2.0 = WebGL 1 (EGL_CONTEXT_CLIENT_VERSION)
++              { SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES },
++              { SDL_GL_CONTEXT_MAJOR_VERSION, EM_WEBGL + 1 },
++              { SDL_GL_CONTEXT_MINOR_VERSION, 0 },
++#endif
+           };
+ 
+         SDL_GL_ATTRIBUTES(i, sdlayer_gl_attributes);
+@@ -1886,6 +1900,10 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
+             so we have to create a new surface in a different format first
+             to force the surface we WANT to be recreated instead of reused. */
+ 
++#if defined __EMSCRIPTEN__ && defined EM_WEBGL
++        // handleevents() yields once per frame; SDL's swap need not sleep too
++        SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
++#endif
+         sdl_window = SDL_CreateWindow("", g_windowPosValid ? g_windowPos.x : (int)SDL_WINDOWPOS_CENTERED_DISPLAY(display),
+                                           g_windowPosValid ? g_windowPos.y : (int)SDL_WINDOWPOS_CENTERED_DISPLAY(display), x, y,
+                                         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | borderless);
+@@ -1903,6 +1921,15 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
+         gladLoadGLLoader(SDL_GL_GetProcAddress);
+ #else
+         gladLoadGLES2Loader(SDL_GL_GetProcAddress);
++#endif
++#if defined __EMSCRIPTEN__ && defined EM_WEBGL
++        {
++            extern void glbuild_em_init(int webgl2);
++            GLint major = 0;
++            SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
++            glbuild_em_init(major >= 3);
++            LOG_F(INFO, "WebGL context: GL_VERSION \"%s\", glad %d.%d", (char const *)glGetString(GL_VERSION), GLVersion.major, GLVersion.minor);
++        }
+ #endif
+         if (GLVersion.major < 2)
+         {
+@@ -2128,6 +2155,10 @@ void videoShowFrame(int32_t w)
+ 
+         {
+             MICROPROFILE_SCOPEI("Engine", "SDL_GL_SwapWindow", MP_GREEN3);
++#ifdef __EMSCRIPTEN__
++            // frame hook for the page's measurements
++            EM_ASM({ if (Module.onEngineFrame) Module.onEngineFrame(1); });
++#endif
+ #if SDL_MAJOR_VERSION >= 2
+             SDL_GL_SwapWindow(sdl_window);
+ #else
+@@ -2213,6 +2244,7 @@ void videoShowFrame(int32_t w)
+     // Emscripten: yield to the browser so the presented frame is painted and
+     // queued input is processed. The engine loop never blocks on its own, so
+     // without this yield the tab would freeze. Requires -sASYNCIFY.
++    EM_ASM({ if (Module.onEngineFrame) Module.onEngineFrame(0); });
+     emscripten_sleep(1);
+ #endif
+ #else
+@@ -2940,7 +2972,13 @@ int32_t handleevents(void)
+     // (no repaint, no delivered input, no audio pump). Yield one browser task
+     // per pump. Requires -sASYNCIFY. totalclock is time-based so waits still
+     // advance; this only hands time back to the browser between polls.
++#ifdef EM_WEBGL
++    // The page may hand in Module.webglYield (a MessageChannel round trip) to
++    // measure frame rates without setTimeout's clamping.
++    em_webgl_yield();
++#else
+     emscripten_sleep(1);
++#endif
+ #endif
+ 
+     return rv;
+diff --git a/source/duke3d/src/actors.cpp b/source/duke3d/src/actors.cpp
+index 1833e2b..4862549 100644
+--- a/source/duke3d/src/actors.cpp
++++ b/source/duke3d/src/actors.cpp
+@@ -1499,7 +1499,7 @@ int A_IncurDamage(int const spriteNum)
+         extern int32_t g_netForensics;
+         if (g_netForensics && numplayers > 1)
+             EM_ASM({ console.log('[pdmg] victim=' + $0 + ' dmg=' + $1 + ' hp=' + $2 + ' srcpic=' + $3); },
+-                   playerNum, pActor->htextra, pSprite->extra, pActor->htpicnum);
++                   playerNum, pActor->htextra, (int)pSprite->extra, pActor->htpicnum);
+ #endif
+ 
+         if (pActor->htowner >= 0 && pSprite->extra <= 0 && STANDALONE_EVAL(true, pActor->htpicnum != FREEZEBLAST))
+@@ -4826,7 +4826,7 @@ ACTOR_STATIC void G_MoveActors(void)
+             extern int32_t g_netForensics;
+             if (g_netForensics && numplayers > 1 && pData[0] <= 60 && (pData[0] & 7) == 1)
+                 EM_ASM({ console.log('[eng] CAR pd=' + $0 + ' plc=' + $1 + ' pic=' + $2); },
+-                       pData[0], movefifoplc, pSprite->picnum);
++                       pData[0], movefifoplc, (int)pSprite->picnum);
+ #endif
+ 
+             if (pData[0] == 4)
+diff --git a/source/duke3d/src/oldnet.cpp b/source/duke3d/src/oldnet.cpp
+index 61d9c10..00b3677 100644
+--- a/source/duke3d/src/oldnet.cpp
++++ b/source/duke3d/src/oldnet.cpp
+@@ -8557,7 +8557,7 @@ int Net_ApplyLateJoinSnapshot(void)
+             int shown = 0;
+             for (int i = headspritestat[5]; i >= 0 && shown < 16; i = nextspritestat[i], shown++)
+                 EM_ASM({ console.log('[misc] i=' + $0 + ' pic=' + $1 + ' t0=' + $2 + ' t1=' + $3 + ' xr=' + $4); },
+-                       i, sprite[i].picnum, actor[i].t_data[0], actor[i].t_data[1], sprite[i].xrepeat);
++                       i, (int)sprite[i].picnum, actor[i].t_data[0], actor[i].t_data[1], (int)sprite[i].xrepeat);
+         }
+     }
+ #endif
+@@ -9209,7 +9209,7 @@ static void Net_ApplyHitReport(int attacker, int victim, int dmg, int weaponPic)
+ #ifdef __EMSCRIPTEN__
+     if (g_netForensics)
+         EM_ASM({ console.log('[hitapply] atk=' + $0 + ' victim=' + $1 + ' dmg=' + $2 + ' hp=' + $3); },
+-               attacker, victim, dmg, sprite[vp->i].extra);
++               attacker, victim, dmg, (int)sprite[vp->i].extra);
+ #endif
+ }
+ 
+@@ -9680,7 +9680,7 @@ void Net_SmoothRemoteSeats(void)
+                 EM_ASM({ console.log('[rsmot] plc=' + $0 + ' seat=' + $1 + ' px=' + $2 + ' py=' + $3
+                          + ' sx=' + $4 + ' sy=' + $5); },
+                        movefifoplc, i2, ps->pos.x, ps->pos.y,
+-                       sprite[ps->i].x, sprite[ps->i].y);
++                       (int)sprite[ps->i].x, (int)sprite[ps->i].y);
+         }
+         // Facing: bounded slew, never a head-jerk (the F16(32) deadband let
+         // remote heads sit visibly wrong, then snap 3x a second).
+diff --git a/source/duke3d/src/player.cpp b/source/duke3d/src/player.cpp
+index e9bb71d..7bf94e7 100644
+--- a/source/duke3d/src/player.cpp
++++ b/source/duke3d/src/player.cpp
+@@ -95,7 +95,7 @@ static void P_IncurDamage(DukePlayer_t * const pPlayer)
+     extern int32_t g_netForensics;
+     if (g_netForensics && numplayers > 1 && (pPlayer->extra_extra8 >> 8) > 0)
+         EM_ASM({ console.log('[hit] victim=' + $0 + ' dmg=' + $1 + ' hp=' + $2); },
+-               P_Get(pPlayer->i), pPlayer->extra_extra8 >> 8, sprite[pPlayer->i].extra);
++               P_Get(pPlayer->i), pPlayer->extra_extra8 >> 8, (int)sprite[pPlayer->i].extra);
+ #endif
+ 
+     int playerDamage = sprite[pPlayer->i].extra - pPlayer->last_extra;
+@@ -6531,8 +6531,8 @@ RECHECK:
+                          + ' flz=' + $4 + ' clz=' + $5 + ' eyez=' + $6 + ' bodz=' + $7); },
+                        movefifoplc, (int)pPlayer->cursectnum,
+                        (int)sector[pPlayer->cursectnum].lotag, (int)sector[pPlayer->cursectnum].hitag,
+-                       sector[pPlayer->cursectnum].floorz, sector[pPlayer->cursectnum].ceilingz,
+-                       pPlayer->pos.z, sprite[pPlayer->i].z, playerNum);
++                       (int)sector[pPlayer->cursectnum].floorz, (int)sector[pPlayer->cursectnum].ceilingz,
++                       pPlayer->pos.z, (int)sprite[pPlayer->i].z, playerNum);
+         }
+     }
+ #endif
+diff --git a/source/duke3d/src/premap.cpp b/source/duke3d/src/premap.cpp
+index a7a1d3c..1c84864 100644
+--- a/source/duke3d/src/premap.cpp
++++ b/source/duke3d/src/premap.cpp
+@@ -1877,7 +1877,7 @@ static void G_CollectSpawnPoints(int gameMode)
+             extern int32_t g_netForensics;
+             if (g_netForensics)
+                 EM_ASM({ console.log('[spawn] pair p=' + $0 + ' sect=' + $1 + ' x=' + $2 + ' y=' + $3); },
+-                       pindex, s.sectnum, s.x, s.y);
++                       pindex, (int)s.sectnum, (int)s.x, (int)s.y);
+         }
+ #endif
+         pindex++;
+diff --git a/source/duke3d/src/savegame.cpp b/source/duke3d/src/savegame.cpp
+index 2d8a5a2..66a7553 100644
+--- a/source/duke3d/src/savegame.cpp
++++ b/source/duke3d/src/savegame.cpp
+@@ -995,7 +995,7 @@ int Net_SaveLateJoinSnapshot(void)
+             int shown = 0;
+             for (int i = headspritestat[5]; i >= 0 && shown < 16; i = nextspritestat[i], shown++)
+                 EM_ASM({ console.log('[misc] i=' + $0 + ' pic=' + $1 + ' t0=' + $2 + ' t1=' + $3 + ' xr=' + $4); },
+-                       i, sprite[i].picnum, actor[i].t_data[0], actor[i].t_data[1], sprite[i].xrepeat);
++                       i, (int)sprite[i].picnum, actor[i].t_data[0], actor[i].t_data[1], (int)sprite[i].xrepeat);
+         }
+     }
+ #endif
