@@ -3,7 +3,8 @@
 # and the classic renderer draw with WebGL 2 on the worker's OffscreenCanvas, through glbuild_ein.cpp,
 # a layer that gives them the fixed-function OpenGL they use (matrices, immediate mode, client
 # arrays, fog, the alpha test) and merges their draws; the platform layer is einlayer.cpp, the sound
-# card driver_ein.cpp, what the worker asks of the game game_ein.cpp.
+# card driver_ein.cpp, what the worker asks of the game game_ein.cpp. The AdLib music plays on
+# DOSBox's DBOPL (Nuked OPL3 with mus_al_core 0).
 #
 #   docker buildx build --file engine/Containerfile --output type=local,dest=assets engine
 #   podman build --file engine/Containerfile --output type=local,dest=assets engine
@@ -21,6 +22,16 @@ RUN git init -q /src \
   && git -C /src fetch -q --depth 1 https://github.com/DigitalCyberSoft/eduke32-wasm.git ${EDUKE32_COMMIT} \
   && git -C /src checkout -q FETCH_HEAD
 
+# DOSBox's DBOPL, the OPL3 emulator the AdLib music plays on (ein.patch fits it to EDuke32's driver),
+# from DOSBox SVN r4483 as dosbox-staging's svn/trunk mirror holds it, pinned. GPL-2.0-or-later.
+ARG DOSBOX_COMMIT=e36b14fb60f1fb66894263a843ae8463b7a4447c
+RUN cd /src/source/audiolib/src \
+  && curl -fsSLO https://raw.githubusercontent.com/dosbox-staging/dosbox-staging/${DOSBOX_COMMIT}/src/hardware/dbopl.cpp \
+  && curl -fsSLO https://raw.githubusercontent.com/dosbox-staging/dosbox-staging/${DOSBOX_COMMIT}/src/hardware/dbopl.h \
+  && printf '%s  %s\n' \
+    58929e591814b7fe63a89b55e4d15c4446b4ed9a6a568b70f6fa07cf8a08d7d7 dbopl.cpp \
+    c4bf51c3914de163d53f06026a9ecde74e0b558362bbe7ce86298f1f69c57e72 dbopl.h | sha256sum -c -
+
 # Polymost on WebGL 2 through glbuild_ein.cpp and GLSL ES 3.00 shaders (webgl.patch), and the build
 # for the engine worker (ein.patch); the files these add are in files/.
 COPY webgl.patch ein.patch /
@@ -33,7 +44,7 @@ WORKDIR /src
 COPY build.sh /
 RUN mkdir -p /out \
   && sh /build.sh /out \
-  && echo "EDuke32 for WebAssembly (DigitalCyberSoft/eduke32-wasm) ${EDUKE32_COMMIT} with webgl.patch, ein.patch and files/, emsdk 6.0.13" > /out/eduke32-build.txt
+  && echo "EDuke32 for WebAssembly (DigitalCyberSoft/eduke32-wasm) ${EDUKE32_COMMIT} with webgl.patch, ein.patch and files/, DOSBox ${DOSBOX_COMMIT} dbopl, emsdk 6.0.13" > /out/eduke32-build.txt
 
 FROM scratch
 COPY --from=build /out/ /

@@ -1,5 +1,5 @@
 diff --git a/Common.mak b/Common.mak
-index eb931c3..4509af2 100644
+index eb931c3..236f304 100644
 --- a/Common.mak
 +++ b/Common.mak
 @@ -77,7 +77,10 @@ ifeq ($(PLATFORM),WII)
@@ -31,9 +31,30 @@ index eb931c3..4509af2 100644
      # EM_GL=1: Polymost on WebGL 2, through the fixed-function layer glbuild_ein.cpp.
      ifeq (1,$(EM_GL))
          override POLYMER := 0
-@@ -1058,12 +1071,26 @@ ifeq ($(RENDERTYPE),SDL)
+@@ -444,7 +457,10 @@ else ifeq ($(PLATFORM),EMSCRIPTEN)
+     else
+         override NETCODE := 0
+     endif
+-    override HAVE_VORBIS := 0
++    # EIN=1 plays music packs' OGG files with the bundled minivorbis.h.
++    ifneq (1,$(EIN))
++        override HAVE_VORBIS := 0
++    endif
+     override HAVE_FLAC := 0
+     override STARTUP_WINDOW := 0
+     override SDL_STATIC := 0
+@@ -1053,17 +1069,32 @@ ifeq ($(RENDERTYPE),SDL)
+         LINKERFLAGS += -sASYNCIFY_STACK_SIZE=16777216
+         ifeq (1,$(EM_GL))
+             # WebGL 2 only. glad takes its functions from Emscripten's GetProcAddress, and
+-            # glbuild_ein.cpp, which never waits for a frame, is left out of ASYNCIFY too
+-            # (this list replaces the one above).
++            # glbuild_ein.cpp, which never waits for a frame, is left out of ASYNCIFY too, as is
++            # DBOPL, whose calls through member pointers ASYNCIFY would otherwise instrument as if
++            # they might wait (this list replaces the one above).
              LINKERFLAGS += -sGL_ENABLE_GET_PROC_ADDRESS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
-             LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*'
+-            LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*'
++            LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*,*DBOPL::*'
              COMPILERFLAGS += -DGLBUILD_EIN
 -            LINKERFLAGS += --profiling-funcs
 +            ifneq (1,$(EIN))
@@ -123,6 +144,404 @@ index d3ede26..96a6b61 100644
          # browser: the JS --js-library seam replaces the stub; native impl excluded
          duke3d_excl += net_transport_stub.cpp net_transport_native.cpp
      else ifeq (1,$(NETNATIVE))
+diff --git a/source/audiolib/include/al_midi.h b/source/audiolib/include/al_midi.h
+index 664e9d2..497359b 100644
+--- a/source/audiolib/include/al_midi.h
++++ b/source/audiolib/include/al_midi.h
+@@ -22,8 +22,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ 
+ #include "opl3.h"
+ 
++enum { AL_CoreNuked, AL_CoreDBOPL };
++
+ extern int AL_Stereo;
+ extern int AL_AdditiveMode;
++extern int AL_Core;
+ extern float AL_PostAmp;
+ 
+ typedef struct
+diff --git a/source/audiolib/src/dbopl.cpp b/source/audiolib/src/dbopl.cpp
+index 61d6879..b51a4d4 100644
+--- a/source/audiolib/src/dbopl.cpp
++++ b/source/audiolib/src/dbopl.cpp
+@@ -14,6 +14,10 @@
+  *  You should have received a copy of the GNU General Public License along
+  *  with this program; if not, write to the Free Software Foundation, Inc.,
+  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ *  Changed in 2026 for EDuke32's AdLib driver: DOSBox's types in place of its
++ *  headers, no mixer handler, and the stereo extension of EDuke32's Nuked OPL3
++ *  (register 0x105 bit 1 enables it, 0xD0-0xD8 pan each channel).
+  */
+ 
+ /*
+@@ -38,7 +42,6 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <stddef.h>
+-#include "dosbox.h"
+ #include "dbopl.h"
+ 
+ 
+@@ -632,8 +635,8 @@ Channel::Channel() {
+ 	chanData = 0;
+ 	regB0 = 0;
+ 	regC0 = 0;
+-	maskLeft = -1;
+-	maskRight = -1;
++	panLeft = 0x10000;
++	panRight = 0x10000;
+ 	feedback = 31;
+ 	fourMask = 0;
+ 	synthHandler = &Channel::BlockTemplate< sm2FM >;
+@@ -734,6 +737,16 @@ void Channel::WriteC0(const Chip* chip, Bit8u val) {
+ 	UpdateSynth(chip);
+ }
+ 
++//Constant power panning: the right side's level at val, the left's at val ^ 0xff
++static Bit32s PanTable[256];
++
++void Channel::WriteD0( const Chip* chip, Bit8u val ) {
++	if ( chip->stereoExt ) {
++		panLeft = PanTable[ val ^ 0xff ];
++		panRight = PanTable[ val ];
++	}
++}
++
+ void Channel::UpdateSynth( const Chip* chip ) {
+ 	//Select the new synth mode
+ 	if ( chip->opl3Active ) {
+@@ -773,8 +786,10 @@ void Channel::UpdateSynth( const Chip* chip ) {
+ 		} else {
+ 			synthHandler = &Channel::BlockTemplate< sm3FM >;
+ 		}
+-		maskLeft = (regC0 & 0x10 ) ? -1 : 0;
+-		maskRight = (regC0 & 0x20 ) ? -1 : 0;
++		if ( !chip->stereoExt ) {
++			panLeft = (regC0 & 0x10 ) ? 0x10000 : 0;
++			panRight = (regC0 & 0x20 ) ? 0x10000 : 0;
++		}
+ 	//opl2 active
+ 	} else { 
+ 		//Disable updating percussion channels
+@@ -946,8 +961,8 @@ Channel* Channel::BlockTemplate( Chip* chip, Bit32u samples, Bit32s* output ) {
+ 		case sm3AMFM:
+ 		case sm3FMAM:
+ 		case sm3AMAM:
+-			output[ i * 2 + 0 ] += sample & maskLeft;
+-			output[ i * 2 + 1 ] += sample & maskRight;
++			output[ i * 2 + 0 ] += ( sample * panLeft ) >> 16;
++			output[ i * 2 + 1 ] += ( sample * panRight ) >> 16;
+ 			break;
+ 		}
+ 	}
+@@ -979,6 +994,7 @@ Chip::Chip( bool _opl3Mode ) : opl3Mode( _opl3Mode ) {
+ 	regBD = 0;
+ 	reg104 = 0;
+ 	opl3Active = 0;
++	stereoExt = 0;
+ }
+ 
+ INLINE Bit32u Chip::ForwardNoise() {
+@@ -1122,6 +1138,7 @@ void Chip::WriteReg( Bit32u reg, Bit8u val ) {
+ 			//Switch synths when changing the 4op combinations
+ 			UpdateSynths();
+ 		} else if ( reg == 0x105 ) {
++			stereoExt = ( val >> 1 ) & 1;
+ 			//MAME says the real opl3 doesn't reset anything on opl3 disable/enable till the next write in another register
+ 			if ( !((opl3Active ^ val) & 1 ) )
+ 				return;
+@@ -1162,7 +1179,9 @@ void Chip::WriteReg( Bit32u reg, Bit8u val ) {
+ 		break;
+ 	case 0xc0 >> 4:
+ 		REGCHAN( WriteC0 );
++		break;
+ 	case 0xd0 >> 4:
++		REGCHAN( WriteD0 );
+ 		break;
+ 	case 0xe0 >> 4:
+ 	case 0xf0 >> 4:
+@@ -1343,6 +1362,9 @@ void InitTables( void ) {
+ 	if ( doneTables )
+ 		return;
+ 	doneTables = true;
++	for ( int i = 0; i < 256; i++ ) {
++		PanTable[i] = (Bit32s)( sin( i * PI / 512.0 ) * 65536.0 );
++	}
+ #if ( DBOPL_WAVE == WAVE_HANDLER ) || ( DBOPL_WAVE == WAVE_TABLELOG )
+ 	//Exponential volume table, same as the real adlib
+ 	for ( int i = 0; i < 256; i++ ) {
+@@ -1499,19 +1521,6 @@ void Handler::WriteReg( Bit32u addr, Bit8u val ) {
+ 	chip.WriteReg( addr, val );
+ }
+ 
+-void Handler::Generate( MixerChannel* chan, Bitu samples ) {
+-	Bit32s buffer[ 512 * 2 ];
+-	if ( GCC_UNLIKELY(samples > 512) )
+-		samples = 512;
+-	if ( !chip.opl3Active ) {
+-		chip.GenerateBlock2( samples, buffer );
+-		chan->AddSamples_m32( samples, buffer );
+-	} else {
+-		chip.GenerateBlock3( samples, buffer );
+-		chan->AddSamples_s32( samples, buffer );
+-	}
+-}
+-
+ void Handler::Init( Bitu rate ) {
+ 	InitTables();
+ 	chip.Setup( rate );
+diff --git a/source/audiolib/src/dbopl.h b/source/audiolib/src/dbopl.h
+index 9e1fb31..363a284 100644
+--- a/source/audiolib/src/dbopl.h
++++ b/source/audiolib/src/dbopl.h
+@@ -14,10 +14,30 @@
+  *  You should have received a copy of the GNU General Public License along
+  *  with this program; if not, write to the Free Software Foundation, Inc.,
+  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ *  Changed in 2026 for EDuke32's AdLib driver: DOSBox's types in place of its
++ *  headers, no mixer handler, and the stereo extension of EDuke32's Nuked OPL3
++ *  (register 0x105 bit 1 enables it, 0xD0-0xD8 pan each channel).
+  */
+ 
+-#include "adlib.h"
+-#include "dosbox.h"
++#include <stdint.h>
++
++typedef uint8_t Bit8u;
++typedef int8_t Bit8s;
++typedef uint16_t Bit16u;
++typedef int16_t Bit16s;
++typedef uint32_t Bit32u;
++typedef int32_t Bit32s;
++typedef uintptr_t Bitu;
++typedef intptr_t Bits;
++
++#define INLINE inline
++#define DB_FASTCALL
++#if defined __GNUC__ || defined __clang__
++#define GCC_UNLIKELY(x) __builtin_expect(!!(x), 0)
++#else
++#define GCC_UNLIKELY(x) (x)
++#endif
+ 
+ //Use 8 handlers based on a small logatirmic wavetabe and an exponential table for volume
+ #define WAVE_HANDLER	10
+@@ -169,8 +189,8 @@ struct Channel {
+ 	Bit8u regC0;
+ 	//This should correspond with reg104, bit 6 indicates a Percussion channel, bit 7 indicates a silent channel
+ 	Bit8u fourMask;
+-	Bit8s maskLeft;		//Sign extended values for both channel's panning
+-	Bit8s maskRight;
++	Bit32s panLeft;		//Both sides' levels, 0x10000 full
++	Bit32s panRight;
+ 
+ 	//Forward the channel data to the operators of the channel
+ 	void SetChanData( const Chip* chip, Bit32u data );
+@@ -180,6 +200,7 @@ struct Channel {
+ 	void WriteA0( const Chip* chip, Bit8u val );
+ 	void WriteB0( const Chip* chip, Bit8u val );
+ 	void WriteC0( const Chip* chip, Bit8u val );
++	void WriteD0( const Chip* chip, Bit8u val );
+ 
+ 	//call this for the first channel
+ 	template< bool opl3Mode >
+@@ -225,6 +246,8 @@ struct Chip {
+ 	Bit8u waveFormMask;
+ 	//0 or -1 when enabled
+ 	Bit8s opl3Active;
++	//1 when 0xD0-0xD8 pan the channels in place of 0xC0's bits
++	Bit8u stereoExt;
+ 	//Running in opl3 mode
+ 	const bool opl3Mode;
+ 
+@@ -248,12 +271,11 @@ struct Chip {
+ 	Chip( bool opl3Mode );
+ };
+ 
+-struct Handler : public Adlib::Handler {
++struct Handler {
+ 	DBOPL::Chip chip;
+-	virtual Bit32u WriteAddr( Bit32u port, Bit8u val );
+-	virtual void WriteReg( Bit32u addr, Bit8u val );
+-	virtual void Generate( MixerChannel* chan, Bitu samples );
+-	virtual void Init( Bitu rate );
++	Bit32u WriteAddr( Bit32u port, Bit8u val );
++	void WriteReg( Bit32u addr, Bit8u val );
++	void Init( Bitu rate );
+ 
+ 	Handler(bool opl3Mode) : chip(opl3Mode) {
+ 	}
+diff --git a/source/audiolib/src/driver_adlib.cpp b/source/audiolib/src/driver_adlib.cpp
+index 1e00bd8..aa0c778 100644
+--- a/source/audiolib/src/driver_adlib.cpp
++++ b/source/audiolib/src/driver_adlib.cpp
+@@ -36,11 +36,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ #include "_al_midi.h"
+ #include "_multivc.h"
+ #include "compat.h"
++#include "dbopl.h"
+ #include "midi.h"
+ #include "midifuncs.h"
+ #include "opl3.h"
+ #include "opl3_reg.h"
+ 
++#include <new>
++
+ enum
+ {
+    AdLibErr_Error   = -1,
+@@ -49,6 +52,12 @@ enum
+ 
+ static int AL_Volume = MIDI_MaxVolume;
+ static opl3_chip AL_Chip;
++static DBOPL::Handler AL_DBOPL(true);
++
++// The emulator AL_Shutdown last reset, which plays until the next reset.
++static int AL_ChipCore;
++// DBOPL's last sample on each side, for AL_ServiceDBOPL's average.
++static Bit32s AL_DBOPLLast[2];
+ 
+ static void AL_Shutdown(void);
+ static int ErrorCode;
+@@ -108,19 +117,68 @@ void AdLibDrv_MIDI_SetTempo(int const tempo, int const division)
+     MV_MIDIRenderTimer = 0;
+ }
+ 
++static void AL_ServiceDue(void)
++{
++    while (MV_MIDIRenderTimer >= MV_MixRate)
++    {
++        if (MV_MIDIRenderTempo >= 0)
++            MIDI_ServiceRoutine();
++        MV_MIDIRenderTimer -= MV_MixRate;
++    }
++}
++
++// DBOPL renders at the mix rate, a block at a time: as many samples as play before the MIDI
++// service is due again. Each sample is averaged with the one before, which takes DBOPL's treble
++// down to Nuked OPL3's, whose 49716 Hz output is interpolated to the mix rate.
++static void AL_ServiceDBOPL(int16_t *buffer16)
++{
++    static Bit32s block[MV_MIXBUFFERSIZE * 2];
++
++    for (int i = 0; i < MV_MIXBUFFERSIZE;)
++    {
++        AL_ServiceDue();
++
++        int n = MV_MIXBUFFERSIZE - i;
++        if (MV_MIDIRenderTempo > 0)
++            n = min(n, (MV_MixRate - MV_MIDIRenderTimer + MV_MIDIRenderTempo - 1) / MV_MIDIRenderTempo);
++        if (MV_MIDIRenderTempo >= 0)
++            MV_MIDIRenderTimer += n * MV_MIDIRenderTempo;
++
++        AL_DBOPL.chip.GenerateBlock3(n, block + i * 2);
++        i += n;
++    }
++
++    float const amp = AL_PostAmp * AL_Volume * (.5f / MIDI_MaxVolume);
++
++    for (int i = 0; i < MV_MIXBUFFERSIZE; i++)
++    {
++        Bit32s const left = block[i * 2] + AL_DBOPLLast[0], right = block[i * 2 + 1] + AL_DBOPLLast[1];
++        AL_DBOPLLast[0] = block[i * 2];
++        AL_DBOPLLast[1] = block[i * 2 + 1];
++        if (MV_Channels == 2)
++        {
++            *buffer16++ = clamp(left * amp, INT16_MIN, INT16_MAX);
++            *buffer16++ = clamp(right * amp, INT16_MIN, INT16_MAX);
++        }
++        else
++            *buffer16++ = clamp((left + right) * amp * .5f, INT16_MIN, INT16_MAX);
++    }
++}
++
+ void AdLibDrv_MIDI_Service(void)
+ {
+     int16_t * buffer16 = (int16_t *)MV_MusicBuffer;
+ 
++    if (AL_ChipCore == AL_CoreDBOPL)
++    {
++        AL_ServiceDBOPL(buffer16);
++        return;
++    }
++
+     for (int i = 0; i < MV_MIXBUFFERSIZE; i++)
+     {
+         int16_t buf[2];
+-        while (MV_MIDIRenderTimer >= MV_MixRate)
+-        {
+-            if (MV_MIDIRenderTempo >= 0)
+-                MIDI_ServiceRoutine();
+-            MV_MIDIRenderTimer -= MV_MixRate;
+-        }
++        AL_ServiceDue();
+         if (MV_MIDIRenderTempo >= 0) MV_MIDIRenderTimer += MV_MIDIRenderTempo;
+         OPL3_GenerateResampled(&AL_Chip, buf);
+         if (MV_Channels == 2)
+@@ -222,6 +280,11 @@ static int constexpr AL_MaxMidiChannel = ARRAY_SIZE(Channel);
+ 
+ int AL_Stereo = TRUE;
+ int AL_AdditiveMode;
++#ifdef EDUKE32_EIN
++int AL_Core = AL_CoreDBOPL;
++#else
++int AL_Core = AL_CoreNuked;
++#endif
+ 
+ float AL_PostAmp = 3.f;
+ 
+@@ -268,7 +331,10 @@ static void LL_AddNode(char * __restrict item, char ** __restrict head, char **
+ 
+ static FORCE_INLINE void AL_SendOutputToPort(int const port, int const reg, int const data)
+ {
+-    OPL3_WriteRegBuffered(&AL_Chip, (uint16_t)(reg + ((port & 2) << 7)), (uint8_t)data);
++    if (AL_ChipCore == AL_CoreDBOPL)
++        AL_DBOPL.chip.WriteReg(reg + ((port & 2) << 7), (uint8_t)data);
++    else
++        OPL3_WriteRegBuffered(&AL_Chip, (uint16_t)(reg + ((port & 2) << 7)), (uint8_t)data);
+ }
+ 
+ 
+@@ -749,7 +815,15 @@ static void AL_SetVolume(int volume) { AL_Volume = clamp(volume, 0, MIDI_MaxVolu
+ 
+ static void AL_Shutdown(void)
+ {
+-    OPL3_Reset(&AL_Chip, MV_MixRate);
++    AL_ChipCore = AL_Core;
++    if (AL_ChipCore == AL_CoreDBOPL)
++    {
++        new (&AL_DBOPL) DBOPL::Handler(true);
++        AL_DBOPL.Init(MV_MixRate);
++        AL_DBOPLLast[0] = AL_DBOPLLast[1] = 0;
++    }
++    else
++        OPL3_Reset(&AL_Chip, MV_MixRate);
+     AL_Reset();
+     AL_ResetVoices();
+ }
+diff --git a/source/audiolib/src/fx_man.cpp b/source/audiolib/src/fx_man.cpp
+index 8334c80..e60d4b3 100644
+--- a/source/audiolib/src/fx_man.cpp
++++ b/source/audiolib/src/fx_man.cpp
+@@ -79,7 +79,7 @@ static int osdcmd_cvar_set_audiolib(osdcmdptr_t parm)
+ 
+     if (r != OSDCMD_OK || parm->numparms < 1) return r;
+ 
+-    if (ASS_MIDISoundDriver == ASS_OPL3 && !Bstrcasecmp(parm->name, "mus_emidicard"))
++    if (ASS_MIDISoundDriver == ASS_OPL3 && (!Bstrcasecmp(parm->name, "mus_emidicard") || !Bstrcasecmp(parm->name, "mus_al_core")))
+         MIDI_Restart();
+ #ifdef _WIN32
+     else if (ASS_MIDISoundDriver == ASS_WinMM && !Bstrcasecmp(parm->name, "mus_mme_device"))
+@@ -124,6 +124,7 @@ void FX_InitCvars(void)
+         { "mus_alsa_clientid", "specify the ALSA MIDI client ID", (void*) &ALSA_ClientID, CVAR_INT | CVAR_FUNCPTR, 0, 255 },
+         { "mus_alsa_portid", "specify the ALSA MIDI port ID", (void*) &ALSA_PortID, CVAR_INT | CVAR_FUNCPTR, 0, 15 },
+ #endif
++        { "mus_al_core", "AdLib emulator: 0: Nuked OPL3  1: DOSBox DBOPL, several times cheaper", (void*) &AL_Core, CVAR_INT | CVAR_FUNCPTR, 0, 1 },
+         { "mus_al_additivemode", "enable/disable alternate additive AdLib timbre mode", (void*) &AL_AdditiveMode, CVAR_BOOL, 0, 1 },
+         { "mus_al_postamp", "controls post-synthesization OPL3 volume amplification", (void*) &AL_PostAmp, CVAR_FLOAT, 1, 6 },
+         { "mus_al_stereo", "enable/disable OPL3 stereo mode", (void*) &AL_Stereo, CVAR_BOOL | CVAR_FUNCPTR, 0, 1 },
 diff --git a/source/build/include/baselayer.h b/source/build/include/baselayer.h
 index 4412b6e..535f344 100644
 --- a/source/build/include/baselayer.h

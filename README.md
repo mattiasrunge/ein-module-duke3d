@@ -121,8 +121,8 @@ The Games page's **?** (**How to add games**) says the same in short
 - The whole game: the `DUKE3D.GRP` of your own Duke Nukem 3D 1.3D, or of the
   Atomic Edition 1.4 or 1.5. The list calls them **Duke Nukem 3D** and **Duke
   Nukem 3D: Atomic Edition**.
-- The 20th Anniversary World Tour's GRP is not known to play here, high-resolution
-  texture packs are untried, and there is no multiplayer.
+- The 20th Anniversary World Tour's GRP is not known to play here, and there is
+  no multiplayer.
 
 ### Where your copy keeps its GRP
 
@@ -173,8 +173,38 @@ one, as **Fetch** does.
 
 The sound effects are EDuke32's mixer, Apogee's grown up, mixing as the worker
 asks for sound; Web Audio plays them. The music is played as on a Sound Blaster
-16: the songs' MIDI through Apogee's AdLib driver into an OPL3, which EDuke32
-emulates. **Options → Sound Setup** sets the effects' and the music's volume.
+16: the songs' MIDI through Apogee's AdLib driver into an OPL3, which
+[DOSBox](https://www.dosbox.com/)'s DBOPL emulates, a quarter to a half of what
+EDuke32's own Nuked OPL3 takes of the processor, for phones, and to the ear the
+same; `mus_al_core 0` in the console plays it on Nuked OPL3 instead. With the
+Roland SC-55 music pack (below) the songs are its recordings instead. **Options →
+Sound Setup** sets the effects' and the music's volume.
+
+## Packs
+
+**Packs**, in the **⋮** menu of a game's page, lists add-on packs EDuke32's
+players have made for Duke Nukem 3D, with what each is, who made it and its size:
+
+- **Roland SC-55 music** (148 MB): the songs as a Roland Sound Canvas played
+  them, recorded by MusicallyInspired.
+- **PlayStation sounds** (7 MB): the sound effects in the PlayStation release's
+  better quality, by Marphy Black.
+- **Voxels** (4 MB): items, weapons and props as 3D voxel models, by ReaperMan,
+  Borion and others; a game takes a few seconds more to start while the models
+  are built.
+- **Widescreen fixes** (1 MB): the status bar, the weapons and the menus drawn
+  for widescreen, by NightFright and Fox.
+
+Nothing is fetched until someone chooses to: **Fetch** (an administrator's, as
+EiN lets only the administrator fetch from the internet) downloads a pack from
+its makers' own site, checks it against its SHA-256 and keeps it in the games
+folder's `.packs`, and **Remove** deletes it. Every game loads the packs fetched,
+from the next time it starts, in the order listed, read from EiN as the game asks
+for their files. In EiN's terminal `duke3d-packs` lists them and `duke3d-fetch
+<pack>` (`sc55`, `psx`, `voxels`, `widescreen`) fetches one.
+
+The High Resolution Pack is not offered: it is made for EDuke32's Polymer
+renderer, which this build leaves out.
 
 ## Layout
 
@@ -194,7 +224,9 @@ emulates. **Options → Sound Setup** sets the effects' and the music's volume.
 | `lib/games.ts`, `lib/api.ts`                                                                       | Where the games are, the editions known by their GRP, the free game offered, and the shape `duke3d-games` answers in.                                                                                                                                 |
 | `lib/catalog.ts`                                                                                   | Reads the games folder: each game's GRP, files and user maps, and what `duke3d-games` says of it.                                                                                                                                                     |
 | `lib/cover.ts`                                                                                     | Decodes a game's title screen out of its GRP, reading only the parts it needs, as a PNG.                                                                                                                                                              |
-| `bin/duke3d-fetch`                                                                                 | Fetches the free game into the games folder, checked against its release's SHA-256.                                                                                                                                                                   |
+| `bin/duke3d-fetch`                                                                                 | Fetches the free game into the games folder, or an add-on pack into the packs folder, checked against its SHA-256.                                                                                                                                    |
+| `bin/duke3d-packs`, `lib/packs.ts`                                                                 | The add-on packs the module offers, where each is fetched from, and which are fetched.                                                                                                                                                                |
+| `ui/duke3d/packs.tsx`                                                                              | Packs, the dialog ⋮ opens on a game's page: the packs, Fetch and Remove.                                                                                                                                                                              |
 | `engine/files/source/build/src/einlayer.cpp`                                                       | EDuke32's platform layer for the engine worker, in place of SDL's: WebGL 2 on the worker's canvas, the video modes, keys, characters, mouse and wheel, and the waits for its ticks.                                                                   |
 | `engine/files/source/audiolib/src/driver_ein.cpp`                                                  | The sound card: the mixer, the music in it, run as the worker asks for sound.                                                                                                                                                                         |
 | `engine/files/source/duke3d/src/game_ein.cpp`                                                      | What the worker asks of the game itself: whether a menu or the console is up, its settings written, and the files it writes handed to the page.                                                                                                       |
@@ -202,7 +234,7 @@ emulates. **Options → Sound Setup** sets the effects' and the music's volume.
 | `engine/files/source/build/src/polymost1Es3Vert.glsl`, `polymost1Es3Frag.glsl`                     | Polymost's shader in GLSL ES 3.00, reading the layer's matrices, colour, fog and alpha test.                                                                                                                                                          |
 | `engine/files/platform/emscripten/ein-library.js`                                                  | The worker's calls the platform layer makes into JavaScript.                                                                                                                                                                                          |
 | `engine/webgl.patch`                                                                               | Builds Polymost on WebGL 2 through the layer: its shaders, the `r_glbatch` setting that turns merging off, and the frame drawn before it is shown.                                                                                                    |
-| `engine/ein.patch`                                                                                 | The build for the engine worker (`EIN=1`), its exports, a new player's settings, frames paced by the worker's ticks, and a GRP known by its size.                                                                                                     |
+| `engine/ein.patch`                                                                                 | The build for the engine worker (`EIN=1`), its exports, a new player's settings, frames paced by the worker's ticks, a GRP known by its size, music packs' OGG files, and the AdLib music on DOSBox's DBOPL (`mus_al_core`).                          |
 | `engine/Containerfile`, `engine/build.sh`                                                          | The build: pinned emsdk image, eduke32-wasm at the commit it pins with the patches and files above, and the make command.                                                                                                                             |
 | `assets/icon.svg`                                                                                  | A radiation trefoil, as Duke's menus have them, drawn for the module: its icon on the Games page, filled with the text colour.                                                                                                                        |
 | `assets/eduke32.js`, `assets/eduke32.wasm`                                                         | The built engine, committed, since a module is installed as its repository stands. `assets/eduke32-build.txt` says what built them.                                                                                                                   |
@@ -219,8 +251,9 @@ Needs only docker with buildx, or podman; nothing is installed on the host.
 It builds `engine/Containerfile` and exports the result into `assets/` with the
 local exporter. The source of the committed `assets/eduke32.wasm` is
 DigitalCyberSoft's eduke32-wasm at the commit `engine/Containerfile` pins, with
-`engine/webgl.patch` and `engine/ein.patch` applied and the files in
-`engine/files/` added, built with `make PLATFORM=EMSCRIPTEN EIN=1`.
+DOSBox's `dbopl.cpp` and `dbopl.h` at the commit it pins, `engine/webgl.patch`
+and `engine/ein.patch` applied and the files in `engine/files/` added, built with
+`make PLATFORM=EMSCRIPTEN EIN=1`.
 
 ## Developing
 
@@ -240,7 +273,7 @@ Node 22 or later:
 
 ## Licence
 
-EDuke32's code, Apogee's sound code and this module's own are
+EDuke32's code, Apogee's sound code, DOSBox's DBOPL and this module's own are
 GPL-2.0-or-later: see `LICENSE`. The BUILD engine is Ken Silverman's, under his
 BUILD licence, which allows its use only free of charge: see `BUILDLIC.TXT`.
 
