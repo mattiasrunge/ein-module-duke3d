@@ -609,6 +609,18 @@ index 4412b6e..b53b7f8 100644
  
  extern void (*keypresscallback)(int32_t,int32_t);
  extern void (*g_mouseCallback)(int32_t,int32_t);
+diff --git a/source/build/include/hightile.h b/source/build/include/hightile.h
+index 851d285..0acd9fd 100644
+--- a/source/build/include/hightile.h
++++ b/source/build/include/hightile.h
+@@ -58,6 +58,7 @@ typedef struct texcachepic_t
+ hicreplctyp * hicfindsubst(int picnum, int palnum, int nozero = 0);
+ hicreplctyp * hicfindskybox(int picnum, int palnum, int nozero = 0);
+ void hictinting_applypixcolor(coltype* tcol, uint8_t pal, bool no_rb_swap);
++void hictinting_applypixcolors(coltype* tcol, int32_t count, uint8_t pal, bool no_rb_swap);
+ 
+ void hicinit(void);
+ void hicsetpalettetint(int32_t palnum, char r, char g, char b, char sr, char sg, char sb, polytintflags_t effect);
 diff --git a/source/build/include/mdsprite.h b/source/build/include/mdsprite.h
 index 49a64f4..fc683ef 100644
 --- a/source/build/include/mdsprite.h
@@ -634,6 +646,31 @@ index 49a64f4..fc683ef 100644
  int32_t polymost_voxdraw(voxmodel_t *m, tspriteptr_t const tspr);
  
  int      md3postload_polymer(md3model_t* m);
+diff --git a/source/build/include/miniz.h b/source/build/include/miniz.h
+index 8185b33..676952a 100644
+--- a/source/build/include/miniz.h
++++ b/source/build/include/miniz.h
+@@ -206,7 +206,10 @@
+ 
+ /* Set MINIZ_USE_UNALIGNED_LOADS_AND_STORES only if not set */
+ #if !defined(MINIZ_USE_UNALIGNED_LOADS_AND_STORES)
+-#if MINIZ_X86_OR_X64_CPU
++#if defined(__wasm__)
++/* WebAssembly loads and stores at any address. */
++#define MINIZ_USE_UNALIGNED_LOADS_AND_STORES 1
++#elif MINIZ_X86_OR_X64_CPU
+ /* Set MINIZ_USE_UNALIGNED_LOADS_AND_STORES to 1 on CPU's that permit efficient integer loads and stores from unaligned addresses. */
+ #define MINIZ_USE_UNALIGNED_LOADS_AND_STORES 0
+ #define MINIZ_UNALIGNED_USE_MEMCPY
+@@ -215,7 +218,7 @@
+ #endif
+ #endif
+ 
+-#if defined(_M_X64) || defined(_WIN64) || defined(__MINGW64__) || defined(_LP64) || defined(__LP64__) || defined(__ia64__) || defined(__x86_64__)
++#if defined(_M_X64) || defined(_WIN64) || defined(__MINGW64__) || defined(_LP64) || defined(__LP64__) || defined(__ia64__) || defined(__x86_64__) || defined(__wasm__)
+ /* Set MINIZ_HAS_64BIT_REGISTERS to 1 if operations on 64-bit integers are reasonably fast (and don't involve compiler generated calls to helper functions). */
+ #define MINIZ_HAS_64BIT_REGISTERS 1
+ #else
 diff --git a/source/build/src/baselayer.cpp b/source/build/src/baselayer.cpp
 index 92df5b1..ebf692e 100644
 --- a/source/build/src/baselayer.cpp
@@ -856,8 +893,310 @@ index b7a09cd..facb519 100644
  #endif
  
      for (ssize_t j = 0; j < MAXVOXMIPS; ++j)
+diff --git a/source/build/src/hightile.cpp b/source/build/src/hightile.cpp
+index fc24b6d..ffca812 100644
+--- a/source/build/src/hightile.cpp
++++ b/source/build/src/hightile.cpp
+@@ -285,15 +285,8 @@ int32_t hicclearsubst(int32_t picnum, int32_t palnum)
+     return 0;
+ }
+ 
+-void hictinting_applypixcolor(coltype* tcol, uint8_t pal, bool no_rb_swap)
++static FORCE_INLINE void hictinting_applyeffect(coltype* tcol, polytintflags_t const effect, int32_t const r, int32_t const g, int32_t const b)
+ {
+-    polytintflags_t const effect = hicfxmask(pal);
+-    polytint_t const& tint = hictinting[pal];
+-
+-    int32_t r = (!no_rb_swap && glinfo.bgra) ? tint.b : tint.r;
+-    int32_t g = tint.g;
+-    int32_t b = (!no_rb_swap && glinfo.bgra) ? tint.r : tint.b;
+-
+     if (effect & HICTINT_GRAYSCALE)
+     {
+         tcol->g = tcol->r = tcol->b = (uint8_t)((tcol->b * GRAYSCALE_COEFF_RED) +
+@@ -334,3 +327,44 @@ void hictinting_applypixcolor(coltype* tcol, uint8_t pal, bool no_rb_swap)
+         break;
+     }
+ }
++
++void hictinting_applypixcolor(coltype* tcol, uint8_t pal, bool no_rb_swap)
++{
++    hictinting_applypixcolors(tcol, 1, pal, no_rb_swap);
++}
++
++void hictinting_applypixcolors(coltype* tcol, int32_t count, uint8_t pal, bool no_rb_swap)
++{
++    polytintflags_t const effect = hicfxmask(pal);
++    polytint_t const& tint = hictinting[pal];
++
++    int32_t r = (!no_rb_swap && glinfo.bgra) ? tint.b : tint.r;
++    int32_t g = tint.g;
++    int32_t b = (!no_rb_swap && glinfo.bgra) ? tint.r : tint.b;
++
++    if (effect & HICTINT_GRAYSCALE)
++    {
++        // The products of the grey's sum, as it multiplies them.
++        static double coeff[3][256];
++        static bool coeffset;
++        if (!coeffset)
++        {
++            for (int i = 0; i < 256; i++)
++            {
++                coeff[0][i] = i * GRAYSCALE_COEFF_RED;
++                coeff[1][i] = i * GRAYSCALE_COEFF_GREEN;
++                coeff[2][i] = i * GRAYSCALE_COEFF_BLUE;
++            }
++            coeffset = true;
++        }
++
++        for (int32_t i = 0; i < count; i++)
++            tcol[i].g = tcol[i].r = tcol[i].b = (uint8_t)(coeff[0][tcol[i].b] + coeff[1][tcol[i].g] + coeff[2][tcol[i].r]);
++    }
++
++    polytintflags_t const rest = effect & ~HICTINT_GRAYSCALE;
++
++    if (rest)
++        for (int32_t i = 0; i < count; i++)
++            hictinting_applyeffect(&tcol[i], rest, r, g, b);
++}
+diff --git a/source/build/src/kplib.cpp b/source/build/src/kplib.cpp
+index 42897b8..4791123 100644
+--- a/source/build/src/kplib.cpp
++++ b/source/build/src/kplib.cpp
+@@ -36,6 +36,10 @@ credits.
+ 
+ #include "vfs.h"
+ 
++#ifdef EDUKE32_EIN
++# include "miniz.h"
++#endif
++
+ #if !defined(_WIN32)
+ static FORCE_INLINE CONSTEXPR int32_t klrotl(int32_t i, int sh) { return (i >> (-sh)) | (i << sh); }
+ #else
+@@ -710,6 +714,177 @@ static void initpngtables()
+     for (i=0; i<512; i++) abstab10[512+i] = abstab10[512-i] = i;
+ }
+ 
++#ifdef EDUKE32_EIN
++static bool kpngfilter(uint8_t *rows);
++
++// A non-interlaced PNG's image data, the IDAT chunks from the first's data at `idat`, `leng`
++// bytes, up to `end`, inflated whole by miniz's tinfl, faster in wasm than the bit reader below,
++// then unfiltered and put in the frame by kpngfilter, or by putbuf as the bit reader's output
++// is; false, with nothing put, when tinfl cannot inflate it.
++static bool kpnginflate(uint8_t const *idat, int32_t leng, uint8_t const *end)
++{
++    static uint8_t *joined, *inflated;
++    static size_t joinedsiz, inflatedsiz;
++
++    // The chunks' data, one after the other: the next chunk is 4 bytes of CRC past this one's data.
++    size_t total = 0;
++    int chunks = 0;
++    for (uint8_t const *chunk = idat - 8; chunk + 12 <= end && !Bmemcmp(&chunk[4], "IDAT", 4); chunks++)
++    {
++        uint32_t const length = B_BIG32(B_UNBUF32(chunk));
++        if (length > (size_t)(end - chunk) - 12)
++            break;
++        total += length;
++        chunk += length + 12;
++    }
++
++    if (chunks == 0 || total < 2 || (int32_t)B_BIG32(B_UNBUF32(idat - 8)) != leng)
++        return false;
++
++    uint8_t const *data = idat;
++    if (chunks > 1)
++    {
++        if (joinedsiz < total)
++        {
++            joined = (uint8_t *)Xrealloc(joined, total);
++            joinedsiz = total;
++        }
++        size_t at = 0;
++        for (uint8_t const *chunk = idat - 8; at < total; )
++        {
++            uint32_t const length = B_BIG32(B_UNBUF32(chunk));
++            Bmemcpy(&joined[at], &chunk[8], length);
++            at += length;
++            chunk += length + 12;
++        }
++        data = joined;
++    }
++
++    // The zlib header, deflate without a preset dictionary, whose checksum kplib does not check either.
++    if ((data[0] & 15) != 8 || (data[1] & 0x20) || ((data[0] << 8) | data[1]) % 31)
++        return false;
++
++    size_t const want = (size_t)(xsizbpl + 1) * ysiz;
++    if (inflatedsiz < want)
++    {
++        inflated = (uint8_t *)Xrealloc(inflated, want);
++        inflatedsiz = want;
++    }
++
++    size_t const got = tinfl_decompress_mem_to_mem(inflated, want, &data[2], total - 2, 0);
++    if (got == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED)
++        return false;
++
++    if (got != want || bitdepth != 8 || kp_xres < xsiz || kp_yres < ysiz || !kpngfilter(inflated))
++        putbuf(inflated, (int32_t)got);
++    return true;
++}
++
++// One row of `xsizbpl` bytes of `bpp` bytes a pixel unfiltered in place, `up` the row above.
++template <int bpp>
++static void kpngunfilter(uint8_t *const row, uint8_t const *const up, int const filter)
++{
++    switch (filter)
++    {
++    case 1:
++        for (int32_t i = bpp; i < xsizbpl; i++) row[i] += row[i - bpp];
++        break;
++    case 2:
++        for (int32_t i = 0; i < xsizbpl; i++) row[i] += up[i];
++        break;
++    case 3:
++        for (int32_t i = 0; i < bpp; i++) row[i] += up[i] >> 1;
++        for (int32_t i = bpp; i < xsizbpl; i += bpp)
++            for (int c = 0; c < bpp; c++)
++                row[i + c] += (row[i + c - bpp] + up[i + c]) >> 1;
++        break;
++    case 4:
++        for (int32_t i = 0; i < bpp; i++) row[i] += up[i];
++        for (int32_t i = bpp; i < xsizbpl; i += bpp)
++            for (int c = 0; c < bpp; c++)
++            {
++                int32_t const a = row[i + c - bpp], b = up[i + c], cc = up[i + c - bpp];
++                int32_t const pa = klabs(b - cc), pb = klabs(a - cc), pc = klabs(a + b - cc - cc);
++                int32_t const ab = pb < pa ? b : a, pab = pb < pa ? pb : pa;
++                row[i + c] += pc < pab ? cc : ab;
++            }
++        break;
++    }
++}
++
++// The whole of a non-interlaced 8-bit PNG's inflated image data, its rows each a filter byte
++// and xsizbpl bytes, unfiltered in place a row at a time and put in the frame as putbuf puts
++// them; false, with nothing put, when a row's filter is not one of PNG's five.
++static bool kpngfilter(uint8_t *rows)
++{
++    int32_t const stride = xsizbpl + 1;
++
++    for (int32_t y = 0; y < ysiz; y++)
++        if (rows[y * stride] > 4)
++            return false;
++
++    int32_t const bpp = kcoltype == 6 ? 4 : kcoltype == 2 ? 3 : kcoltype == 4 ? 2 : 1;
++    static uint8_t *zero;
++    static int32_t zerosiz;
++    if (zerosiz < xsizbpl)
++    {
++        zero = (uint8_t *)Xrealloc(zero, xsizbpl);
++        Bmemset(zero, 0, xsizbpl);
++        zerosiz = xsizbpl;
++    }
++
++    for (int32_t y = 0; y < ysiz; y++)
++    {
++        uint8_t *const row = &rows[y * stride + 1];
++        uint8_t const *const up = y ? row - stride : zero;
++        int const filter = row[-1];
++
++        if (filter1st < 0) filter1st = filter; else filterest |= (1 << filter);
++
++        switch (bpp)
++        {
++        case 4: kpngunfilter<4>(row, up, filter); break;
++        case 3: kpngunfilter<3>(row, up, filter); break;
++        case 2: kpngunfilter<2>(row, up, filter); break;
++        default: kpngunfilter<1>(row, up, filter); break;
++        }
++
++        // In the frame as B, G, R, A.
++        uint8_t *const out = (uint8_t *)(kp_frameplace + y * kp_bytesperline);
++        switch (kcoltype)
++        {
++        case 6:
++            for (int32_t x = 0; x < xsiz; x++)
++            {
++                out[x * 4 + 0] = row[x * 4 + 2];
++                out[x * 4 + 1] = row[x * 4 + 1];
++                out[x * 4 + 2] = row[x * 4 + 0];
++                out[x * 4 + 3] = row[x * 4 + 3];
++            }
++            break;
++        case 2:
++            for (int32_t x = 0; x < xsiz; x++)
++            {
++                int32_t c = B_LITTLE32(row[x * 3 + 2] | (row[x * 3 + 1] << 8) | (row[x * 3] << 16) | 0xff000000);
++                if (trnsrgb && c == trnsrgb) c &= B_LITTLE32(0xffffff);
++                B_BUF32(&out[x * 4], c);
++            }
++            break;
++        case 4:
++            for (int32_t x = 0; x < xsiz; x++)
++                B_BUF32(&out[x * 4], (palcol[row[x * 2]] & B_LITTLE32(0xffffff)) | B_BIG32((int32_t)row[x * 2 + 1]));
++            break;
++        default:
++            for (int32_t x = 0; x < xsiz; x++)
++                B_BUF32(&out[x * 4], palcol[row[x]]);
++            break;
++        }
++    }
++
++    return true;
++}
++#endif
++
+ static int32_t kpngrend(const char *kfilebuf, int32_t kfilength,
+                         intptr_t dakpframeplace, int32_t dakpbytesperline, int32_t daxres, int32_t dayres)
+ {
+@@ -807,6 +982,12 @@ static int32_t kpngrend(const char *kfilebuf, int32_t kfilength,
+         filptr = &filptr[leng+4]; //crc = B_BIG32(B_UNBUF32(&filptr[-4]));
+     }
+ 
++#ifdef EDUKE32_EIN
++    // The first IDAT chunk's data.
++    uint8_t const *const idat = filptr;
++    int32_t const idatleng = leng;
++#endif
++
+     //Initialize this for the getbits() function
+     zipfilmode = 0;
+     filptr = &filptr[leng-4]; bitpos = -((leng-4)<<3); nfilptr = 0;
+@@ -849,6 +1030,11 @@ static int32_t kpngrend(const char *kfilebuf, int32_t kfilength,
+ 
+     initpass();
+ 
++#ifdef EDUKE32_EIN
++    if (!intlac && kpnginflate(idat, idatleng, (uint8_t const *)kfilebuf + kfilength))
++        goto kpngrend_goodret;
++#endif
++
+     slidew = 0; slider = 16384;
+     zlibcompflags = getbits(16); //Actually 2 fields: 8:compmethflags, 8:addflagscheck
+     do
+diff --git a/source/build/src/mdsprite.cpp b/source/build/src/mdsprite.cpp
+index 0c93d5d..6a2ffaa 100644
+--- a/source/build/src/mdsprite.cpp
++++ b/source/build/src/mdsprite.cpp
+@@ -728,11 +728,13 @@ int32_t mdloadskin(md2model_t *m, int32_t number, int32_t pal, int32_t surf)
+ 
+         // mdloadskin doesn't duplicate npow2 texture pixels
+ 
++#ifndef EDUKE32_EIN
+         if (!glinfo.bgra)
+         {
+             for (bssize_t j = siz.x*siz.y - 1; j >= 0; j--)
+                 swapchar(&pic[j].r, &pic[j].b);
+         }
++#endif
+ 
+         if (pal < (MAXPALOOKUPS - RESERVEDPALS))
+             m->usesalpha = hasalpha;
 diff --git a/source/build/src/polymost.cpp b/source/build/src/polymost.cpp
-index d0f097d..7657319 100644
+index d0f097d..20b191a 100644
 --- a/source/build/src/polymost.cpp
 +++ b/source/build/src/polymost.cpp
 @@ -33,7 +33,13 @@ int32_t r_detailmapping = 1;
@@ -899,7 +1238,94 @@ index d0f097d..7657319 100644
  
  #ifdef EDUKE32_GLES
  int32_t glusetexcompr = 2;
-@@ -2759,13 +2774,13 @@ static inline bool polymost_spriteIsLegacyVoxel(tspritetype const * const tspr)
+@@ -2408,6 +2423,54 @@ uint8_t *gloadindexedtile_mdloadskin_shared(char *fn, int32_t picfillen, vec2_t
+     return pic;
+ }
+ 
++#ifdef EDUKE32_EIN
++// kplib's B, G, R, A picture with the brightness table and the palette's tint applied, its alpha
++// folded into `al` (AND) and `onebitalpha` (whether it is only 0 or 255), and its pixels left in
++// the order they are uploaded in: R, G, B, A, or as they are with BGRA textures. Each step is a
++// pass over the row of its own, skipped when it has nothing to do.
++static void polymost_finishpic(coltype *pic, vec2_t const siz, vec2_t const tsiz, char const *const cptr,
++                               polytintflags_t const effect, int32_t const dapalnum, char *const onebitalpha, char *const al)
++{
++    bool identity = true;
++    for (int i = 0; i < 256 && identity; i++)
++        identity = (uint8_t)cptr[i] == i;
++
++    uint8_t alpha = 255, onebit = 1;
++
++    for (int y = 0; y < tsiz.y; y++)
++    {
++        coltype *const row = &pic[y * siz.x];
++
++        for (int x = 0; x < tsiz.x; x++)
++        {
++            uint8_t const a = row[x].a;
++            alpha &= a;
++            onebit &= (a == 0) | (a == 255);
++        }
++
++        if (!identity)
++            for (int x = 0; x < tsiz.x; x++)
++            {
++                row[x].r = cptr[row[x].r];
++                row[x].g = cptr[row[x].g];
++                row[x].b = cptr[row[x].b];
++            }
++
++        if (effect)
++            hictinting_applypixcolors(row, tsiz.x, dapalnum, false);
++
++        if (!glinfo.bgra)
++            for (int x = 0; x < tsiz.x; x++)
++                swapchar(&row[x].r, &row[x].b);
++    }
++
++    *al &= alpha;
++    *onebitalpha &= onebit;
++}
++#endif
++
++// The hi-res picture `fn` in true colour: in B, G, R, A order, or with EDUKE32_EIN in the order it
++// is uploaded in (polymost_finishpic).
+ coltype *gloadtruecolortile_mdloadskin_shared(char *fn, int32_t picfillen, vec2_t *const tsiz, vec2_t *const siz, char *const onebitalpha, polytintflags_t effect,
+                                              int32_t dapalnum, char *const al)
+ {
+@@ -2472,6 +2535,9 @@ coltype *gloadtruecolortile_mdloadskin_shared(char *fn, int32_t picfillen, vec2_
+ 
+     char* cptr = britable[gammabrightness ? 0 : curbrightness];
+ 
++#ifdef EDUKE32_EIN
++    polymost_finishpic(pic, *siz, *tsiz, cptr, effect, dapalnum, onebitalpha, al);
++#else
+     for (bssize_t y = 0, j = 0; y < tsiz->y; ++y, j += siz->x)
+     {
+         coltype tcol, * rpptr = &pic[j];
+@@ -2490,6 +2556,7 @@ coltype *gloadtruecolortile_mdloadskin_shared(char *fn, int32_t picfillen, vec2_
+             rpptr[x] = tcol;
+         }
+     }
++#endif
+ 
+     return pic;
+ }
+@@ -2591,11 +2658,13 @@ int32_t gloadtile_hi(int32_t dapic, int32_t dapalnum, int32_t facen, hicreplctyp
+                     Bmemcpy(&pic[siz.x * tsiz.y], pic, (siz.y - tsiz.y) * siz.x << 2);
+             }
+ 
++#ifndef EDUKE32_EIN
+             if (!glinfo.bgra)
+             {
+                 for (bssize_t i=siz.x*siz.y, j=0; j<i; j++)
+                     swapchar(&pic[j].r, &pic[j].b);
+             }
++#endif
+ 
+             // end CODEDUP
+ 
+@@ -2759,13 +2828,13 @@ static inline bool polymost_spriteIsLegacyVoxel(tspritetype const * const tspr)
  {
      auto const tsprflags = tspr->clipdist;
      auto const picnum = tspr->picnum;
@@ -915,7 +1341,7 @@ index d0f097d..7657319 100644
  }
  
  int32_t polymost_maskWallHasTranslucency(uwalltype const * const wall)
-@@ -6617,7 +6632,7 @@ void polymost_scansector(int32_t sectnum)
+@@ -6617,7 +6686,7 @@ void polymost_scansector(int32_t sectnum)
                  ((s.x * gcosang) + (s.y * gsinang) > 0))
              {
                  if ((spr->cstat & (CSTAT_SPRITE_ONE_SIDED|CSTAT_SPRITE_ALIGNMENT)) != (CSTAT_SPRITE_ONE_SIDED|CSTAT_SPRITE_ALIGNMENT_WALL) ||
@@ -1819,7 +2245,7 @@ index 00b3677..2d887a6 100644
              return;
          }
 diff --git a/source/duke3d/src/premap.cpp b/source/duke3d/src/premap.cpp
-index 1c84864..e465dbf 100644
+index 1c84864..9914ddb 100644
 --- a/source/duke3d/src/premap.cpp
 +++ b/source/duke3d/src/premap.cpp
 @@ -30,6 +30,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -1845,7 +2271,7 @@ index 1c84864..e465dbf 100644
  
      while (cnt < g_precacheCount)
      {
-@@ -511,6 +520,13 @@ void G_CacheMapData(void)
+@@ -511,10 +520,21 @@ void G_CacheMapData(void)
              if (waloff[i] == 0)
                  tileLoad((int16_t)i);
  
@@ -1859,7 +2285,15 @@ index 1c84864..e465dbf 100644
              for (int j = 0; j < 2; j++)
              {
                  if (bitmap_test(precachehightile[j], i))
-@@ -530,7 +546,11 @@ void G_CacheMapData(void)
+                 {
++#ifdef EDUKE32_EIN
++                    // The hi-res replacement in the palette, which only the classic renderer draws.
++                    if (videoGetRenderMode() == REND_CLASSIC)
++#endif
+                     tileLoadScaled(i);
+ 
+                     if (videoGetRenderMode() != REND_CLASSIC)
+@@ -530,7 +550,11 @@ void G_CacheMapData(void)
          }
          i++;
  
@@ -1871,7 +2305,7 @@ index 1c84864..e465dbf 100644
          {
              int const percentComplete = min(100, tabledivide32(100 * cntDisplayed, g_precacheCount));
              cntDisplayed = logapproach(cntDisplayed, cnt);
-@@ -548,6 +568,9 @@ void G_CacheMapData(void)
+@@ -548,6 +572,9 @@ void G_CacheMapData(void)
              gameHandleEvents();
              if (KB_KeyPressed(sc_Space))
                  break;

@@ -74,7 +74,7 @@ export const KNOWN_PACKS: KnownPack[] = [
     id: 'hrp',
     title: 'High Resolution Pack',
     about:
-      "Hi-res textures and skies, and the enemies, Duke and the other characters as 3D models, from the Duke Nukem 3D High Resolution Pack's Polymost edition, by its team. A 1 GB download, of which a game reads 100 to 200 MB the first time in a browser, which then keeps it; a level takes about half a minute longer to load, the first time in a browser a few minutes.",
+      "Hi-res textures and skies, and the enemies, Duke and the other characters as 3D models, from the Duke Nukem 3D High Resolution Pack's Polymost edition, by its team. A 1 GB download, of which a game reads 100 to 200 MB the first time in a browser, which then keeps it; a level takes about five seconds longer to load, the first time in a browser a few minutes.",
     file: 'duke3d_hrp-r750.zip',
     url: 'https://www.duke4.org/files/nightfright/hrp/duke3d_hrp-r750.zip',
     sha256: 'e1fca8bec182006a8ef683e5da204e54e6dbc2575d6510e9738825adcb270b04',
