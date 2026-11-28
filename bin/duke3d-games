@@ -7,7 +7,8 @@ import { findGames } from '@duke3d/catalog';
 import { GAMES } from '@duke3d/games';
 
 const duke3dGames = async (cmd: Command): CmdReturn => {
-  const games = await findGames(cmd);
+  const [only] = cmd.args.filter((arg) => !arg.startsWith('-'));
+  const games = await findGames(cmd, only);
   if (cmd.json) await cmd.writeJSON(games satisfies Game[] satisfies GameEntry[]);
   else {
     for (const game of games) {
@@ -22,9 +23,9 @@ duke3dGames.spec = {
   name: 'duke3d-games',
   effect: 'read' as const,
   description: `List the games in ${GAMES}, each folder with a duke3d*.grp, the shareware episode first; then the free game duke3d-fetch fetches when it is not there yet`,
-  args: [],
+  args: [{ name: 'folder', type: 'path' as const, optional: true, description: `only the game in this folder of ${GAMES}, as someone who opened a share link to it reads it` }],
   flags: [],
-  examples: ['duke3d-games'],
+  examples: ['duke3d-games', `duke3d-games ${GAMES}/shareware`],
   returns:
     'One entry per game. An installed one: its id (the folder\'s name), title, state installed, path, detail, cover (its title screen as a PNG data: URL), the GRP it plays, every file in the folder, their size in bytes, and its user maps (the .map files beside the GRP). An offered one: its id, title, state offered, about and download (bytes).',
 };

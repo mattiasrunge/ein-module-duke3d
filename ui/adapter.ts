@@ -1,3 +1,4 @@
+import { shq } from '@ein/ui/lib';
 import { execCommand } from '@ein/ui/signals';
 import type { GameAdapter, Written } from '@games/adapter';
 import type { Game } from '../lib/api.ts';
@@ -12,7 +13,9 @@ const KEPT = /^(save\d+\.esv|eduke32\.cfg|settings\.cfg)$/;
 export const adapter: GameAdapter<Game> = {
   module: 'duke3d',
   title: 'Duke Nukem 3D',
-  list: () => execCommand<Game[]>('duke3d-games'),
+  list: (path) => execCommand<Game[]>(path ? `duke3d-games ${shq(path)}` : 'duke3d-games'),
+  // A game is listed by its folder, so it can be shared by a link to it.
+  shares: true,
   async start({ game, onKeep, ...options }) {
     if (game.state !== 'installed') throw new Error(`${game.title} is not here yet`);
     // The keys' drawing (`DukePad`) shows the keys the game starts with and those it writes.
