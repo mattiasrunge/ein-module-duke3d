@@ -191,22 +191,24 @@ players have made for Duke Nukem 3D, with what each is, who made it and its size
 - **PlayStation sounds** (7 MB): the sound effects in the PlayStation release's
   better quality, by Marphy Black.
 - **Voxels** (4 MB): items, weapons and props as 3D voxel models, by ReaperMan,
-  Borion and others; a game takes about 20 seconds more to start while the
-  models are read and built.
+  Borion and others; each model is built the first time a level needs it.
 - **Widescreen fixes** (1 MB): the status bar, the weapons and the menus drawn
   for widescreen, by NightFright and Fox.
+- **HRP models** (1 GB): the enemies, Duke and the other characters as 3D
+  models, from the [Duke Nukem 3D High Resolution Pack](https://hrp.duke4.net)'s
+  Polymost edition. Only its models are loaded: its hi-res textures and HUD
+  weapons are left out, and so is its Polymer edition, which this build has no
+  renderer for. A game reads about 60 MB of it, and starts a few seconds later.
 
 Nothing is fetched until someone chooses to: **Fetch** (an administrator's, as
 EiN lets only the administrator fetch from the internet) downloads a pack from
 its makers' own site, checks it against its SHA-256 and keeps it in the games
-folder's `.packs`, and **Remove** deletes it. Every game loads the packs fetched,
-from the next time it starts, in the order listed, read from EiN as the game asks
-for their files. Each pack's definitions, what its files replace, are
-loaded as modules of their own, so packs do not hide each other's. In EiN's terminal `duke3d-packs` lists them and `duke3d-fetch
-<pack>` (`sc55`, `psx`, `voxels`, `widescreen`) fetches one.
-
-The High Resolution Pack is not offered: it is made for EDuke32's Polymer
-renderer, which this build leaves out.
+folder's `.packs`, and **Remove** deletes it. Every game loads the packs
+fetched, from the next time it starts, in the order listed, read from EiN as the
+game asks for their files. Each pack's definitions, what its files replace, are
+loaded as modules of their own, so packs do not hide each other's. In EiN's
+terminal `duke3d-packs` lists them and `duke3d-fetch <pack>` (`sc55`, `psx`,
+`voxels`, `widescreen`, `hrp-models`) fetches one.
 
 ## Layout
 

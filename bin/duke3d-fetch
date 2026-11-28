@@ -8,7 +8,7 @@
 # administrator fetch URLs.
 arg --desc "Fetch one of the free Duke Nukem 3D games the Games page offers into the games folder, or an add-on pack into the packs folder"
 arg --effect write
-arg '<game>' string "shareware (Duke Nukem 3D's shareware episode), or a pack: sc55, psx, voxels or widescreen"
+arg '<game>' string "shareware (Duke Nukem 3D's shareware episode), or a pack: sc55, psx, voxels, widescreen or hrp-models"
 arg --example "duke3d-fetch shareware"
 arg --example "duke3d-fetch sc55"
 arg --returns "nothing; the game is in a folder of its own in /groups/users/duke3d, named as the game, or the pack in /groups/users/duke3d/.packs."
@@ -36,6 +36,11 @@ case "$GAME" in
     url=https://github.com/NightFright2k19/duke3d_voxelpack/releases/download/2.0-rc2/duke3d_voxels.zip
     sha256=cc2abd00a0fc72a6cbc32026bd7c68db58140f840cb8b94755f07b8e2c25e253
     ;;
+  hrp-models)
+    pack=duke3d_hrp-r750.zip
+    url=https://www.duke4.org/files/nightfright/hrp/duke3d_hrp-r750.zip
+    sha256=e1fca8bec182006a8ef683e5da204e54e6dbc2575d6510e9738825adcb270b04
+    ;;
   widescreen)
     pack=duke3d_widefix.zip
     url=https://github.com/NightFright2k19/duke3d_widefix/releases/download/1.6/duke3d_widefix.zip
@@ -45,7 +50,7 @@ esac
 if [ -n "$pack" ]; then
   mkdir -p "$packs"
   attrs -J 'processing=[]' "$games"
-  # Fetched beside where it goes, on disk: EiN's /tmp is memory, and a pack can be 150 MB.
+  # Fetched beside where it goes, on disk: EiN's /tmp is memory, and a pack can be 1 GB.
   part=$packs/.$pack.part
   if ! curl -fLs -o "$part" "$url"; then
     echo "duke3d-fetch: could not fetch $url" >&2
@@ -70,7 +75,7 @@ case "$GAME" in
     sha256=ae65d993ab342b3d859ec4298650498bd0597ae53875197a029f26e76e5f69a6
     ;;
   *)
-    echo "duke3d-fetch: $GAME is not a game or a pack it fetches: shareware, sc55, psx, voxels, widescreen" >&2
+    echo "duke3d-fetch: $GAME is not a game or a pack it fetches: shareware, sc55, psx, voxels, widescreen, hrp-models" >&2
     exit 2
     ;;
 esac

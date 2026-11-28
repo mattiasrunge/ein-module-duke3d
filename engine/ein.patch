@@ -1,5 +1,5 @@
 diff --git a/Common.mak b/Common.mak
-index eb931c3..236f304 100644
+index eb931c3..7d21432 100644
 --- a/Common.mak
 +++ b/Common.mak
 @@ -77,7 +77,10 @@ ifeq ($(PLATFORM),WII)
@@ -43,7 +43,7 @@ index eb931c3..236f304 100644
      override HAVE_FLAC := 0
      override STARTUP_WINDOW := 0
      override SDL_STATIC := 0
-@@ -1053,17 +1069,32 @@ ifeq ($(RENDERTYPE),SDL)
+@@ -1053,17 +1069,34 @@ ifeq ($(RENDERTYPE),SDL)
          LINKERFLAGS += -sASYNCIFY_STACK_SIZE=16777216
          ifeq (1,$(EM_GL))
              # WebGL 2 only. glad takes its functions from Emscripten's GetProcAddress, and
@@ -51,10 +51,12 @@ index eb931c3..236f304 100644
 -            # (this list replaces the one above).
 +            # glbuild_ein.cpp, which never waits for a frame, is left out of ASYNCIFY too, as is
 +            # DBOPL, whose calls through member pointers ASYNCIFY would otherwise instrument as if
-+            # they might wait (this list replaces the one above).
++            # they might wait, and the reading of files (kread, kzread) and of voxels and the
++            # building of their meshes (qloadkvx, loadkvx, vox2poly, voxfinish), whose reads end in
++            # calls through stdio's pointers (this list replaces the one above).
              LINKERFLAGS += -sGL_ENABLE_GET_PROC_ADDRESS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
 -            LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*'
-+            LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*,*DBOPL::*'
++            LINKERFLAGS += -sASYNCIFY_REMOVE='C_ParseCommand(bool),glein_*,*DBOPL::*,vox2poly*,voxfinish*,loadkvx*,qloadkvx*,kzread*,kread*'
              COMPILERFLAGS += -DGLBUILD_EIN
 -            LINKERFLAGS += --profiling-funcs
 +            ifneq (1,$(EIN))
@@ -577,7 +579,7 @@ index 0426e27..e78f551 100644
          auto xd = (xmp_data *)voice->rawdataptr;
          auto ctx = xd->ctx;
 diff --git a/source/build/include/baselayer.h b/source/build/include/baselayer.h
-index 4412b6e..535f344 100644
+index 4412b6e..b53b7f8 100644
 --- a/source/build/include/baselayer.h
 +++ b/source/build/include/baselayer.h
 @@ -46,6 +46,11 @@ extern int32_t r_displayindex;
@@ -592,17 +594,46 @@ index 4412b6e..535f344 100644
  // NOTE: these are implemented in game-land so they may be overridden in game specific ways
  extern int32_t startwin_open(void);
  extern int32_t startwin_close(void);
-@@ -283,6 +288,10 @@ int debugprintf(const char *,...) ATTRIBUTE((format(printf,1,2)));
+@@ -283,6 +288,14 @@ int debugprintf(const char *,...) ATTRIBUTE((format(printf,1,2)));
  
  int32_t handleevents(void);
  int32_t handleevents_peekkeys(void);
 +#ifdef EDUKE32_EIN
 +int32_t handleevents_input(void);
++// handleevents for a loop that works between its polls, as the definitions
++// parser does at each of its tokens: it waits for a tick only once the loop
++// has worked a while since its last, not at every poll.
++int32_t handleevents_working(void);
 +bool einFrameDue(void);
 +#endif
  
  extern void (*keypresscallback)(int32_t,int32_t);
  extern void (*g_mouseCallback)(int32_t,int32_t);
+diff --git a/source/build/include/mdsprite.h b/source/build/include/mdsprite.h
+index 49a64f4..fc683ef 100644
+--- a/source/build/include/mdsprite.h
++++ b/source/build/include/mdsprite.h
+@@ -230,6 +230,9 @@ EXTERN void md3_vox_calcmat_common(tspriteptr_t tspr, const vec3f_t *a0, float f
+ EXTERN int32_t mdpause;
+ EXTERN int32_t nextmodelid;
+ EXTERN voxmodel_t *voxmodels[MAXVOXELS];
++// The mesh of voxel `voxid`, which Polymost builds the first time it asks
++// for it, as it draws a sprite or precaches a level's tiles; NULL for none.
++voxmodel_t *voxmodel_get(int32_t voxid);
+ 
+ #ifdef USE_GLEXT
+ void voxvboalloc(voxmodel_t *vm);
+@@ -238,6 +241,10 @@ void voxvbofree(voxmodel_t *vm);
+ 
+ void voxfree(voxmodel_t *m);
+ voxmodel_t *voxload(const char *filnam);
++// The mesh of the KVX voxel `filnam`, `filelen` bytes, from its first mip in
++// memory, `mipleng` bytes as the file has them after its length, and the 768
++// bytes of its palette.
++voxmodel_t *voxloadkvx(const char *filnam, int32_t filelen, const char *mip, int32_t mipleng, const uint8_t *rawpal);
+ int32_t polymost_voxdraw(voxmodel_t *m, tspriteptr_t const tspr);
+ 
+ int      md3postload_polymer(md3model_t* m);
 diff --git a/source/build/src/baselayer.cpp b/source/build/src/baselayer.cpp
 index 92df5b1..ebf692e 100644
 --- a/source/build/src/baselayer.cpp
@@ -636,11 +667,214 @@ index 92df5b1..ebf692e 100644
  
      g_frameDelay = calcFrameDelay(!throttle || ((unsigned)(r_maxfps-1) < (unsigned)refreshfreq) ? r_maxfps : -1);
  
+diff --git a/source/build/src/defs.cpp b/source/build/src/defs.cpp
+index 5b55a33..06ded46 100644
+--- a/source/build/src/defs.cpp
++++ b/source/build/src/defs.cpp
+@@ -502,7 +502,11 @@ static int32_t defsparser(scriptfile *script)
+             iter = 0;
+         }
+ #endif
++#ifdef EDUKE32_EIN
++        handleevents_working();
++#else
+         handleevents();
++#endif
+         if (quitevent) return 0;
+         tokn = getatoken(script,basetokens,ARRAY_SIZE(basetokens));
+         cmdtokptr = script->ltextptr;
+diff --git a/source/build/src/engine.cpp b/source/build/src/engine.cpp
+index b7a09cd..facb519 100644
+--- a/source/build/src/engine.cpp
++++ b/source/build/src/engine.cpp
+@@ -86,6 +86,10 @@ int16_t tiletovox[MAXTILES];
+ int32_t usevoxels = 1;
+ #ifdef USE_OPENGL
+ static char *voxfilenames[MAXVOXELS];
++// Each KVX voxel's palette as its file has it, the file's length and its
++// first mip's, which qloadkvx keeps for the mesh.
++static uint8_t *voxfilepals[MAXVOXELS];
++static int32_t voxfilelens[MAXVOXELS], voxmip0lens[MAXVOXELS];
+ #endif
+ char g_haveVoxels;
+ //#define kloadvoxel loadvoxel
+@@ -11878,6 +11882,30 @@ static void videoAllocateBuffers(void)
+ }
+ 
+ #ifdef USE_OPENGL
++voxmodel_t *voxmodel_get(int32_t const voxid)
++{
++    if (voxmodels[voxid] || !voxfilenames[voxid])
++        return voxmodels[voxid];
++
++    voxmodel_t *const vm = voxmip0lens[voxid] && voxoff[voxid][0]
++        ? voxloadkvx(voxfilenames[voxid], voxfilelens[voxid], (char const *)voxoff[voxid][0], voxmip0lens[voxid], voxfilepals[voxid])
++        : voxload(voxfilenames[voxid]);
++
++    DO_FREE_AND_NULL(voxfilepals[voxid]);
++    voxmip0lens[voxid] = 0;
++    DO_FREE_AND_NULL(voxfilenames[voxid]);
++
++    if (vm)
++    {
++        vm->scale = voxscale[voxid]*(1.f/65536.f);
++# ifdef USE_GLEXT
++        voxvboalloc(vm);
++# endif
++    }
++
++    return voxmodels[voxid] = vm;
++}
++
+ static void PolymostProcessVoxels(void)
+ {
+ # ifdef USE_GLEXT
+@@ -11896,30 +11924,6 @@ static void PolymostProcessVoxels(void)
+         }
+     }
+ # endif
+-
+-    if (g_haveVoxels != 1)
+-        return;
+-
+-    g_haveVoxels = 2;
+-
+-    LOG_F(INFO, "Generating 3D meshes from voxel model data. This may take a while...");
+-    videoNextPage();
+-    double time = timerGetFractionalTicks();
+-    int cnt = 0;
+-    for (bssize_t i=0; i<MAXVOXELS; i++)
+-    {
+-        if (voxfilenames[i])
+-        {
+-            voxmodels[i] = voxload(voxfilenames[i]);
+-            voxmodels[i]->scale = voxscale[i]*(1.f/65536.f);
+-# ifdef USE_GLEXT
+-            voxvboalloc(voxmodels[i]);
+-# endif
+-            DO_FREE_AND_NULL(voxfilenames[i]);
+-            cnt++;
+-        }
+-    }
+-    LOG_F(INFO, "Generated 3D meshes for %d voxels in %.2f ms.", cnt, timerGetFractionalTicks() - time);
+ }
+ 
+ static void PolymostFreeVBOs(void)
+@@ -12232,30 +12236,43 @@ int32_t qloadkvx(int32_t voxindex, const char *filename)
+ 
+     if (lengtot < 768)
+     {
++        kclose(fil);
+         LOG_F(ERROR, "qloadkvx: file %s is truncated", filename);
+         return -1;
+     }
+ 
+-    klseek(fil, -768, SEEK_END);
++    // The whole file in one read, so that a zip's entry is inflated once,
++    // not once for the palette at its end and again from its start.
++    char *const file = (char *)Xmalloc(lengtot);
++    int32_t const got = kread(fil, file, lengtot);
++    kclose(fil);
++
++    if (got != lengtot)
++    {
++        Xfree(file);
++        LOG_F(ERROR, "qloadkvx: file %s is truncated", filename);
++        return -1;
++    }
++
++    char const *const pal = &file[lengtot-768];
+ 
+     maxvoxcol = 0;
+ 
+     for (int i=0; i<256; i++)
+     {
+-        char c[3];
+-        kread(fil, c, 3);
++        char const *const c = &pal[i*3];
+         *(int32_t *)&voxpal[i] = B_LITTLE32((c[0]<<18) + (c[1]<<10) + (c[2]<<2) + (i<<24));
+     }
+ 
+-    klseek(fil, 0, SEEK_SET);
+-
+     uint8_t bitmap[bitmap_size(256)];
+     int32_t lastsiz=0;
+ 
+     for (int i=0; i<MAXVOXMIPS; i++)
+     {
+         int32_t dasiz=0;
+-        kread(fil, &dasiz, 4); dasiz = B_LITTLE32(dasiz);
++        if (lengcnt+4 <= lengtot)
++            Bmemcpy(&dasiz, &file[lengcnt], 4);
++        dasiz = B_LITTLE32(dasiz);
+ 
+         // this is a terrible heuristic based on the worst cases of poorly generated mipmaps found in Ion Fury
+         if (lengcnt >= lengtot-768 || dasiz < ((lastsiz/9) << 1))
+@@ -12271,7 +12288,7 @@ int32_t qloadkvx(int32_t voxindex, const char *filename)
+         g_cache.allocateBlock(&voxoff[voxindex][i], dasiz, &voxlock[voxindex][i]);
+ 
+         char *ptr = (char *) voxoff[voxindex][i];
+-        kread(fil, ptr, dasiz);
++        Bmemcpy(ptr, &file[lengcnt+4], min(dasiz, lengtot-(lengcnt+4)));
+ 
+         if (i == 0)
+             getVoxelColorMap(ptr, bitmap);
+@@ -12280,7 +12297,6 @@ int32_t qloadkvx(int32_t voxindex, const char *filename)
+ 
+         lengcnt += dasiz+4;
+     }
+-    kclose(fil);
+ 
+ #ifdef USE_OPENGL
+     if (voxmodels[voxindex])
+@@ -12291,8 +12307,19 @@ int32_t qloadkvx(int32_t voxindex, const char *filename)
+ 
+     Xfree(voxfilenames[voxindex]);
+     voxfilenames[voxindex] = Xstrdup(filename);
++
++    // What Polymost builds the voxel's mesh from (voxmodel_get):
++    // the first mip in voxoff, which the colour map leaves as the file has
++    // it, and the file's palette and length, so it reads the file no more.
++    voxfilelens[voxindex] = lengtot;
++    if (!voxfilepals[voxindex])
++        voxfilepals[voxindex] = (uint8_t *)Xmalloc(768);
++    Bmemcpy(voxfilepals[voxindex], pal, 768);
++    voxmip0lens[voxindex] = voxoff[voxindex][0] ? B_LITTLE32(*(int32_t *)file) : 0;
+ #endif
+ 
++    Xfree(file);
++
+     g_haveVoxels = 1;
+ 
+     return 0;
+@@ -12310,6 +12337,8 @@ void vox_clearid(int32_t const voxindex)
+         voxmodels[voxindex] = NULL;
+     }
+     DO_FREE_AND_NULL(voxfilenames[voxindex]);
++    DO_FREE_AND_NULL(voxfilepals[voxindex]);
++    voxmip0lens[voxindex] = 0;
+ #endif
+ 
+     for (ssize_t j = 0; j < MAXVOXMIPS; ++j)
 diff --git a/source/build/src/polymost.cpp b/source/build/src/polymost.cpp
-index d0f097d..a5c2961 100644
+index d0f097d..7657319 100644
 --- a/source/build/src/polymost.cpp
 +++ b/source/build/src/polymost.cpp
-@@ -45,7 +45,12 @@ int32_t r_polygonmode;     // 0:GL_FILL,1:GL_LINE,2:GL_POINT //FUK
+@@ -33,7 +33,13 @@ int32_t r_detailmapping = 1;
+ #endif
+ 
+ int32_t r_animsmoothing = 1;
++#ifdef EDUKE32_EIN
++// EiN's: hi-res textures and model skins at half their size, a quarter of the memory; the HRP's
++// 1024 by 1024 skins look the same at 720p.
++int32_t r_downsize = 1;
++#else
+ int32_t r_downsize;
++#endif
+ int32_t r_downsizevar = -1;
+ int32_t r_drawpolyVertsBufferLength = 30000;
+ int32_t r_flatsky = 1;
+@@ -45,7 +51,12 @@ int32_t r_polygonmode;     // 0:GL_FILL,1:GL_LINE,2:GL_POINT //FUK
  int32_t r_polymostDebug;
  int32_t r_shadeinterpolate = 1;
  int32_t r_skyzbufferhack;
@@ -653,7 +887,7 @@ index d0f097d..a5c2961 100644
  int32_t r_usenewshading = 4;
  int32_t r_usesamplerobjects = 1;
  int32_t r_usetileshades = 1;
-@@ -128,7 +133,11 @@ struct glfiltermodes glfiltermodes[NUMGLFILTERMODES] = { { "GL_NEAREST",
+@@ -128,7 +139,11 @@ struct glfiltermodes glfiltermodes[NUMGLFILTERMODES] = { { "GL_NEAREST",
                                                           { "GL_LINEAR_MIPMAP_LINEAR",   GL_LINEAR_MIPMAP_LINEAR,   GL_LINEAR  } };
  
  int32_t glanisotropy = 16;
@@ -665,6 +899,483 @@ index d0f097d..a5c2961 100644
  
  #ifdef EDUKE32_GLES
  int32_t glusetexcompr = 2;
+@@ -2759,13 +2774,13 @@ static inline bool polymost_spriteIsLegacyVoxel(tspritetype const * const tspr)
+ {
+     auto const tsprflags = tspr->clipdist;
+     auto const picnum = tspr->picnum;
+-    return (tsprflags & TSPR_FLAGS_SLAB) && (unsigned)picnum < MAXVOXELS && voxmodels[picnum];
++    return (tsprflags & TSPR_FLAGS_SLAB) && (unsigned)picnum < MAXVOXELS && voxmodel_get(picnum);
+ }
+ 
+ static inline bool polymost_spriteIsModernVoxel(tspritetype const * const tspr)
+ {
+     auto const picnum = tspr->picnum;
+-    return !polymost_spriteIsLegacyVoxel(tspr) && usevoxels && (unsigned)tiletovox[picnum] < MAXVOXELS && voxmodels[tiletovox[picnum]];
++    return !polymost_spriteIsLegacyVoxel(tspr) && usevoxels && (unsigned)tiletovox[picnum] < MAXVOXELS && voxmodel_get(tiletovox[picnum]);
+ }
+ 
+ int32_t polymost_maskWallHasTranslucency(uwalltype const * const wall)
+@@ -6617,7 +6632,7 @@ void polymost_scansector(int32_t sectnum)
+                 ((s.x * gcosang) + (s.y * gsinang) > 0))
+             {
+                 if ((spr->cstat & (CSTAT_SPRITE_ONE_SIDED|CSTAT_SPRITE_ALIGNMENT)) != (CSTAT_SPRITE_ONE_SIDED|CSTAT_SPRITE_ALIGNMENT_WALL) ||
+-                    (usevoxels && tiletovox[spr->picnum] >= 0 && voxmodels[tiletovox[spr->picnum]]) ||
++                    (usevoxels && tiletovox[spr->picnum] >= 0 && voxmodel_get(tiletovox[spr->picnum])) ||
+                     dmulscale6(sintable[(spr->ang+512)&2047],-s.x, sintable[spr->ang&2047],-s.y) > 0)
+                 {
+                     if (renderAddTsprite(z, sectnum))
+diff --git a/source/build/src/voxmodel.cpp b/source/build/src/voxmodel.cpp
+index 350dafb..7f8f780 100644
+--- a/source/build/src/voxmodel.cpp
++++ b/source/build/src/voxmodel.cpp
+@@ -374,14 +374,28 @@ static void addquad(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1,
+     gvox->qcnt++;
+ }
+ 
+-static inline int32_t isolid(int32_t x, int32_t y, int32_t z)
++// The solid voxels of the column at (x, y) from z0 on, a bit for each of 32
++// places, 0 outside the voxel; z0 is at least -1.
++static FORCE_INLINE uint32_t vbits(int32_t x, int32_t y, int32_t z0)
+ {
+-    if (((uint32_t)x >= (uint32_t)voxsiz.x) | ((uint32_t)y >= (uint32_t)voxsiz.y) | ((uint32_t)z >= (uint32_t)voxsiz.z))
++    if (((uint32_t)x >= (uint32_t)voxsiz.x) | ((uint32_t)y >= (uint32_t)voxsiz.y) | (z0 >= voxsiz.z))
+         return 0;
+ 
+-    z += x*yzsiz + y*voxsiz.z;
++    uint32_t const *const bits = (uint32_t const *)vbit;
++    uint32_t const p = x*yzsiz + y*voxsiz.z + max(z0, 0);
++    uint32_t const s = p&31;
++    uint32_t w = bits[p>>5]>>s;
++    if (s)
++        w |= bits[(p>>5)+1]<<(32-s);
++
++    if (z0 < 0)
++        w <<= -z0;
++
++    int32_t const left = voxsiz.z - z0;
++    if (left < 32)
++        w &= (1u<<left)-1;
+ 
+-    return (vbit[z>>5] & (1<<SHIFTMOD32(z))) != 0;
++    return w;
+ }
+ 
+ static FORCE_INLINE int isair(int const i)
+@@ -460,7 +474,37 @@ static voxmodel_t *vox2poly()
+     int32_t *const bx0 = (int32_t *)Xmalloc(i<<1);
+     int32_t *const by0 = (int32_t *)(((intptr_t)bx0)+i);
+ 
+-    int32_t ov, oz=0;
++    // by0set: a bit for each by0 that is not -1, so that a sweep skips 32
++    // places of a column at once where v does not change and no quad is open.
++    int32_t const by0words = ((max(voxsiz.y, voxsiz.z)+1+31)>>5)+1;
++    uint32_t *const by0set = (uint32_t *)Xmalloc(by0words<<2);
++
++    // The ±z faces' v along y, for the sweep whose columns run along y:
++    // zface[i>0][(x*voxsiz.z+z)*ywords + (y>>5)], bit y&31.
++    int32_t const ywords = (voxsiz.y+1+31)>>5;
++    int32_t const zfacewords = voxsiz.x*voxsiz.z*ywords;
++    uint32_t *const zface = (uint32_t *)Xcalloc(2*zfacewords, sizeof(uint32_t));
++
++    for (int x=0; x<voxsiz.x; x++)
++        for (int y=0; y<voxsiz.y; y++)
++            for (int z0=0; z0<voxsiz.z; z0+=32)
++            {
++                uint32_t const solid = vbits(x, y, z0);
++                if (!solid)
++                    continue;
++
++                for (int up=0; up<2; up++)
++                {
++                    // i = up ? 1 : -1: solid at z and not at z-i.
++                    uint32_t face = solid & ~vbits(x, y, up ? z0-1 : z0+1);
++                    uint32_t *const col = &zface[up*zfacewords + x*voxsiz.z*ywords + (y>>5)];
++
++                    for (; face; face &= face-1)
++                        col[(z0+__builtin_ctz(face))*ywords] |= 1u<<(y&31);
++                }
++            }
++
++    int32_t oz=0;
+ 
+     for (int cnt=0; cnt<2; cnt++)
+     {
+@@ -470,55 +514,69 @@ static voxmodel_t *vox2poly()
+         gvox->qcnt = 0;
+ 
+         memset(by0, -1, (max(voxsiz.y, voxsiz.z)+1)<<2);
++        memset(by0set, 0, by0words<<2);
+         int32_t v = 0;
+ 
+-        for (i=-1; i<=1; i+=2)
+-            for (int y=0; y<voxsiz.y; y++)
+-                for (int x=0; x<=voxsiz.x; x++)
+-                    for (int z=0; z<=voxsiz.z; z++)
++        // One column of a sweep, places 0 to len: `bits(n0)` gives v at n0 to
++        // n0+31 (0 from len on), `quad(n)` adds the quad that ends at n, and a
++        // quad that starts at n starts at `start` along the sweep's middle axis.
++        auto column = [&](int32_t const len, int32_t const start, auto bits, auto quad)
++        {
++            for (int32_t n0=0; n0<=len; n0+=32)
++            {
++                uint32_t const vs = bits(n0);
++                int32_t const places = min(32, len+1-n0);
++                uint32_t const mask = places == 32 ? ~0u : (1u<<places)-1;
++
++                if (!(((vs ^ ((vs<<1) | (uint32_t)v)) | by0set[n0>>5]) & mask))
++                    continue;
++
++                for (int32_t k=0; k<places; k++)
++                {
++                    int32_t const n = n0+k, ov = v;
++                    v = (vs>>k)&1;
++
++                    if ((by0[n] >= 0) && ((by0[n] != oz) || (v >= ov)))
+                     {
+-                        ov = v; v = (isolid(x, y, z) && (!isolid(x, y+i, z)));
+-                        if ((by0[z] >= 0) && ((by0[z] != oz) || (v >= ov)))
+-                        {
+-                            daquad(bx0[z], y, by0[z], x, y, by0[z], x, y, z, i>=0);
+-                            by0[z] = -1;
+-                        }
++                        quad(n);
++                        by0[n] = -1;
++                        by0set[n>>5] &= ~(1u<<(n&31));
++                    }
+ 
+-                        if (v > ov) oz = z;
+-                        else if ((v < ov) && (by0[z] != oz)) { bx0[z] = x; by0[z] = oz; }
++                    if (v > ov) oz = n;
++                    else if ((v < ov) && (by0[n] != oz))
++                    {
++                        bx0[n] = start;
++                        by0[n] = oz;
++                        by0set[n>>5] |= 1u<<(n&31);
+                     }
++                }
++            }
++        };
+ 
+         for (i=-1; i<=1; i+=2)
+-            for (int z=0; z<voxsiz.z; z++)
++            for (int y=0; y<voxsiz.y; y++)
+                 for (int x=0; x<=voxsiz.x; x++)
+-                    for (int y=0; y<=voxsiz.y; y++)
+-                    {
+-                        ov = v; v = (isolid(x, y, z) && (!isolid(x, y, z-i)));
+-                        if ((by0[y] >= 0) && ((by0[y] != oz) || (v >= ov)))
+-                        {
+-                            daquad(bx0[y], by0[y], z, x, by0[y], z, x, y, z, (i>=0)+2);
+-                            by0[y] = -1;
+-                        }
++                    column(voxsiz.z, x,
++                           [&](int32_t z0) { return vbits(x, y, z0) & ~vbits(x, y+i, z0); },
++                           [&](int32_t z) { daquad(bx0[z], y, by0[z], x, y, by0[z], x, y, z, i>=0); });
+ 
+-                        if (v > ov) oz = y;
+-                        else if ((v < ov) && (by0[y] != oz)) { bx0[y] = x; by0[y] = oz; }
+-                    }
++        for (i=-1; i<=1; i+=2)
++            for (int z=0; z<voxsiz.z; z++)
++                for (int x=0; x<=voxsiz.x; x++)
++                {
++                    uint32_t const *const col = x < voxsiz.x ? &zface[(i>0)*zfacewords + (x*voxsiz.z+z)*ywords] : NULL;
++                    column(voxsiz.y, x,
++                           [&](int32_t y0) { return col ? col[y0>>5] : 0u; },
++                           [&](int32_t y) { daquad(bx0[y], by0[y], z, x, by0[y], z, x, y, z, (i>=0)+2); });
++                }
+ 
+         for (i=-1; i<=1; i+=2)
+             for (int x=0; x<voxsiz.x; x++)
+                 for (int y=0; y<=voxsiz.y; y++)
+-                    for (int z=0; z<=voxsiz.z; z++)
+-                    {
+-                        ov = v; v = (isolid(x, y, z) && (!isolid(x-i, y, z)));
+-                        if ((by0[z] >= 0) && ((by0[z] != oz) || (v >= ov)))
+-                        {
+-                            daquad(x, bx0[z], by0[z], x, y, by0[z], x, y, z, (i>=0)+4);
+-                            by0[z] = -1;
+-                        }
+-
+-                        if (v > ov) oz = z;
+-                        else if ((v < ov) && (by0[z] != oz)) { bx0[z] = y; by0[z] = oz; }
+-                    }
++                    column(voxsiz.z, y,
++                           [&](int32_t z0) { return vbits(x, y, z0) & ~vbits(x-i, y, z0); },
++                           [&](int32_t z) { daquad(x, bx0[z], by0[z], x, y, by0[z], x, y, z, (i>=0)+4); });
+ 
+         if (!cnt)
+         {
+@@ -629,6 +687,8 @@ skindidntfit:
+     Xfree(shp);
+     Xfree(zbit);
+     Xfree(bx0);
++    Xfree(by0set);
++    Xfree(zface);
+ 
+     const float phack[2] = { 0, 1.f / 256.f };
+ 
+@@ -676,7 +736,8 @@ static void alloc_vcolhashead(void)
+ static void alloc_vbit(void)
+ {
+     yzsiz = voxsiz.y*voxsiz.z;
+-    int32_t i = ((voxsiz.x*yzsiz+31)>>3)+1;
++    // Two words more than the bits take, which vbits reads past the last.
++    int32_t i = (((voxsiz.x*yzsiz+31)>>5)+2)<<2;
+ 
+     vbit = (int32_t *)Xmalloc(i);
+     memset(vbit, 0, i);
+@@ -781,61 +842,60 @@ static int32_t loadvox(const char *filnam)
+     return 0;
+ }
+ 
+-static int32_t loadkvx(const char *filnam)
++// Reads a KVX voxel's first mip from memory: `mip`, `mipleng` bytes, as its
++// file has it after its length, and `rawpal`, the 768 bytes of the file's
++// palette.
++static int32_t loadkvxmip(char const *const mip, int32_t const mipleng, uint8_t const *const rawpal)
+ {
+-    const buildvfs_kfd fil = kopen4load(filnam, 0);
+-    if (fil == buildvfs_kfd_invalid)
++    int32_t const headsiz = 6 * sizeof(int32_t);
++    if (mipleng < headsiz)
+         return -1;
+ 
+-    int32_t mip1leng;
+-    kread(fil, &mip1leng, sizeof(int32_t));
+-    kread(fil, &voxsiz, sizeof(vec3_t));
+-#if B_BIG_ENDIAN != 0
+-    mip1leng = B_LITTLE32(mip1leng);
+-    voxsiz.x = B_LITTLE32(voxsiz.x);
+-    voxsiz.y = B_LITTLE32(voxsiz.y);
+-    voxsiz.z = B_LITTLE32(voxsiz.z);
+-#endif
++    int32_t head[6];
++    Bmemcpy(head, mip, sizeof(head));
++    voxsiz.x = B_LITTLE32(head[0]);
++    voxsiz.y = B_LITTLE32(head[1]);
++    voxsiz.z = B_LITTLE32(head[2]);
++    voxpiv.x = (float)B_LITTLE32(head[3])*(1.f/256.f);
++    voxpiv.y = (float)B_LITTLE32(head[4])*(1.f/256.f);
++    voxpiv.z = (float)B_LITTLE32(head[5])*(1.f/256.f);
+ 
+-    vec3_t v;
+-    kread(fil, &v, sizeof(vec3_t));
+-    voxpiv.x = (float)B_LITTLE32(v.x)*(1.f/256.f);
+-    voxpiv.y = (float)B_LITTLE32(v.y)*(1.f/256.f);
+-    voxpiv.z = (float)B_LITTLE32(v.z)*(1.f/256.f);
+-    klseek(fil, (voxsiz.x+1)<<2, SEEK_CUR);
++    if (voxsiz.x <= 0 || voxsiz.y <= 0 || voxsiz.z <= 0)
++        return -1;
+ 
+     const int32_t ysizp1 = voxsiz.y+1;
+     int32_t const xyoffscnt = voxsiz.x * ysizp1;
+     int32_t const xyoffssiz = xyoffscnt * sizeof(uint16_t);
++    int32_t const dataoffs = headsiz + ((voxsiz.x+1)<<2) + xyoffssiz;
++
++    if (dataoffs > mipleng)
++        return -1;
+ 
+     uint16_t *xyoffs = (uint16_t *)Xmalloc(xyoffssiz);
+-    kread(fil, xyoffs, xyoffssiz);
++    Bmemcpy(xyoffs, &mip[headsiz + ((voxsiz.x+1)<<2)], xyoffssiz);
+ #if B_BIG_ENDIAN != 0
+     for (int32_t i = 0; i < xyoffscnt; ++i)
+         xyoffs[i] = B_LITTLE16(xyoffs[i]);
+ #endif
+ 
+     int32_t pal[256];
+-    read_pal(fil, pal);
++    for (int i=0; i<256; i++)
++    {
++        char const *const c = (char const *)&rawpal[i*3];
++        pal[i] = B_LITTLE32((c[0]<<18) + (c[1]<<10) + (c[2]<<2) + (i<<24));
++    }
+ 
+     alloc_vbit();
+ 
+-    for (vcolhashsizm1=4096; vcolhashsizm1<(mip1leng>>1); vcolhashsizm1<<=1)
++    for (vcolhashsizm1=4096; vcolhashsizm1<(mipleng>>1); vcolhashsizm1<<=1)
+     {
+         /* do nothing */
+     }
+     vcolhashsizm1--; //approx to numvoxs!
+     alloc_vcolhashead();
+ 
+-    klseek(fil, (7 * sizeof(int32_t)) + ((voxsiz.x+1)<<2) + ((ysizp1*voxsiz.x)<<1), SEEK_SET);
+-
+-    int32_t const tbufsiz = kfilelength(fil)-ktell(fil);
+-    char *const tbuf = (char *)Xmalloc(tbufsiz);
+-
+-    kread(fil, tbuf, tbufsiz);
+-    kclose(fil);
+-
+-    char *cptr = tbuf;
++    char const *cptr = &mip[dataoffs];
++    char const *const cend = &mip[mipleng];
+ 
+     for (int x=0; x<voxsiz.x; x++) //Set surface voxels to 1 else 0
+     {
+@@ -846,10 +906,10 @@ static int32_t loadkvx(const char *filnam)
+             int32_t i = xyoffs[idx+1] - xyoffs[idx];
+             int32_t z1 = 0;
+ 
+-            while (i)
++            while (i > 0 && cptr + 3 <= cend)
+             {
+-                const int32_t z0 = cptr[0];
+-                const int32_t k = cptr[1];
++                const int32_t z0 = (uint8_t)cptr[0];
++                const int32_t k = (uint8_t)cptr[1];
+                 cptr += 3;
+ 
+                 if (!(cptr[-1]&16))
+@@ -858,22 +918,56 @@ static int32_t loadkvx(const char *filnam)
+                 i -= k+3;
+                 z1 = z0+k;
+ 
++                if (z1 > voxsiz.z || cptr + k > cend)
++                    break;
++
+                 setzrange1(vbit, j+z0, j+z1);  // PK: oob in AMC TC dev if vbit alloc'd w/o +1
+ 
+                 for (int z=z0; z<z1; z++)
+-                    putvox(x, y, z, pal[*cptr++]);
++                    putvox(x, y, z, pal[(uint8_t)*cptr++]);
+             }
+ 
+             j += voxsiz.z;
+         }
+     }
+ 
+-    Xfree(tbuf);
+     Xfree(xyoffs);
+ 
+     return 0;
+ }
+ 
++// Reads a KVX file whole, in one read, and its first mip.
++static int32_t loadkvx(const char *filnam, int32_t *filelen)
++{
++    const buildvfs_kfd fil = kopen4load(filnam, 0);
++    if (fil == buildvfs_kfd_invalid)
++        return -1;
++
++    int32_t const leng = kfilelength(fil);
++    if (leng < 4 + 768)
++    {
++        kclose(fil);
++        return -1;
++    }
++
++    char *const file = (char *)Xmalloc(leng);
++    int32_t const got = kread(fil, file, leng);
++    kclose(fil);
++
++    int32_t mip1leng;
++    Bmemcpy(&mip1leng, file, sizeof(int32_t));
++    mip1leng = B_LITTLE32(mip1leng);
++
++    int32_t const ret = got == leng
++        ? loadkvxmip(&file[4], min(mip1leng, leng - 4 - 768), (uint8_t const *)&file[leng-768])
++        : -1;
++
++    Xfree(file);
++    *filelen = leng;
++
++    return ret;
++}
++
+ static int32_t loadkv6(const char *filnam)
+ {
+     const buildvfs_kfd fil = kopen4load(filnam, 0);
+@@ -981,28 +1075,13 @@ void voxfree(voxmodel_t *m)
+     Xfree(m);
+ }
+ 
+-voxmodel_t *voxload(const char *filnam)
++// The mesh of the voxel read last (loadvox, loadkvxmip, loadkv6), from the
++// texture cache when it has it, keyed by `filnam` and `filelen`.
++static voxmodel_t *voxfinish(int32_t ret, const char *filnam, int32_t filelen, int32_t is8bit)
+ {
+-    int32_t is8bit, ret;
+-
+-    const int32_t i = Bstrlen(filnam)-4;
+-    if (i < 0)
+-        return NULL;
+-
+-    if (!Bstrcasecmp(&filnam[i], ".vox")) { ret = loadvox(filnam); is8bit = 1; }
+-    else if (!Bstrcasecmp(&filnam[i], ".kvx")) { ret = loadkvx(filnam); is8bit = 1; }
+-    else if (!Bstrcasecmp(&filnam[i], ".kv6")) { ret = loadkv6(filnam); is8bit = 0; }
+-    //else if (!Bstrcasecmp(&filnam[i],".vxl")) { ret = loadvxl(filnam); is8bit = 0; }
+-    else return NULL;
+-
+     voxmodel_t* vm = NULL;
+     if (ret >= 0)
+     {
+-        // file presence is guaranteed
+-        buildvfs_kfd filh = kopen4load(filnam, 0);
+-        int32_t const filelen = kfilelength(filh);
+-        kclose(filh);
+-
+         char voxcacheid[BMAX_PATH];
+         texcache_calcid(voxcacheid, filnam, filelen, -1, -1);
+ 
+@@ -1034,6 +1113,36 @@ voxmodel_t *voxload(const char *filnam)
+     return vm;
+ }
+ 
++voxmodel_t *voxload(const char *filnam)
++{
++    int32_t is8bit, ret, filelen = 0;
++
++    const int32_t i = Bstrlen(filnam)-4;
++    if (i < 0)
++        return NULL;
++
++    if (!Bstrcasecmp(&filnam[i], ".vox")) { ret = loadvox(filnam); is8bit = 1; }
++    else if (!Bstrcasecmp(&filnam[i], ".kvx")) { ret = loadkvx(filnam, &filelen); is8bit = 1; }
++    else if (!Bstrcasecmp(&filnam[i], ".kv6")) { ret = loadkv6(filnam); is8bit = 0; }
++    //else if (!Bstrcasecmp(&filnam[i],".vxl")) { ret = loadvxl(filnam); is8bit = 0; }
++    else return NULL;
++
++    if (ret >= 0 && !filelen)
++    {
++        // file presence is guaranteed
++        buildvfs_kfd filh = kopen4load(filnam, 0);
++        filelen = kfilelength(filh);
++        kclose(filh);
++    }
++
++    return voxfinish(ret, filnam, filelen, is8bit);
++}
++
++voxmodel_t *voxloadkvx(const char *filnam, int32_t filelen, const char *mip, int32_t mipleng, const uint8_t *rawpal)
++{
++    return voxfinish(loadkvxmip(mip, mipleng, rawpal), filnam, filelen, 1);
++}
++
+ //Draw voxel model as perfect cubes
+ int32_t polymost_voxdraw(voxmodel_t *m, tspriteptr_t const tspr)
+ {
+diff --git a/source/duke3d/src/common.cpp b/source/duke3d/src/common.cpp
+index 57f43ed..8084f08 100644
+--- a/source/duke3d/src/common.cpp
++++ b/source/duke3d/src/common.cpp
+@@ -139,6 +139,13 @@ const char *G_GrpFile(void)
+ 
+ const char *G_DefFile(void)
+ {
++#ifdef EDUKE32_EIN
++    // EiN names each pack's definitions files with -mh. The duke3d.def a pack's zip brings
++    // is not read: it would load that pack's definitions a second time, or, the HRP's, all of
++    // its Polymer edition. A duke3d.def in the game's own directory is read.
++    if (g_defNamePtr == NULL && !buildvfs_exists(G_DefaultDefFile()))
++        return "";
++#endif
+     return (g_defNamePtr == NULL) ? G_DefaultDefFile() : g_defNamePtr;
+ }
+ 
 diff --git a/source/duke3d/src/config.cpp b/source/duke3d/src/config.cpp
 index 5fa12c9..1d7cb5b 100644
 --- a/source/duke3d/src/config.cpp
@@ -1017,10 +1728,21 @@ index 1bc19f6..7fc2711 100644
          // changes. Costs one string eval per menu TRANSITION (not per frame); lets the
          // headless rig wait for real menu states instead of guessing at timings, and
 diff --git a/source/duke3d/src/premap.cpp b/source/duke3d/src/premap.cpp
-index 1c84864..db93531 100644
+index 1c84864..e465dbf 100644
 --- a/source/duke3d/src/premap.cpp
 +++ b/source/duke3d/src/premap.cpp
-@@ -501,6 +501,11 @@ void G_CacheMapData(void)
+@@ -30,6 +30,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ 
+ #include "vfs.h"
+ 
++#ifdef USE_OPENGL
++# include "mdsprite.h"
++#endif
++
+ #ifdef __EMSCRIPTEN__
+ # include <emscripten.h>   // [spawn] placement-flow forensics
+ #endif
+@@ -501,6 +505,11 @@ void G_CacheMapData(void)
      int cntDisplayed = -1;
      int pctDisplayed = -1;
      int i = 0;
@@ -1032,7 +1754,21 @@ index 1c84864..db93531 100644
  
      while (cnt < g_precacheCount)
      {
-@@ -530,7 +535,11 @@ void G_CacheMapData(void)
+@@ -511,6 +520,13 @@ void G_CacheMapData(void)
+             if (waloff[i] == 0)
+                 tileLoad((int16_t)i);
+ 
++#ifdef USE_OPENGL
++            // The tile's voxel mesh, which Polymost would build as it first
++            // drew the tile.
++            if (videoGetRenderMode() == REND_POLYMOST && usevoxels && (unsigned)tiletovox[i] < MAXVOXELS)
++                voxmodel_get(tiletovox[i]);
++#endif
++
+             for (int j = 0; j < 2; j++)
+             {
+                 if (bitmap_test(precachehightile[j], i))
+@@ -530,7 +546,11 @@ void G_CacheMapData(void)
          }
          i++;
  
@@ -1044,7 +1780,7 @@ index 1c84864..db93531 100644
          {
              int const percentComplete = min(100, tabledivide32(100 * cntDisplayed, g_precacheCount));
              cntDisplayed = logapproach(cntDisplayed, cnt);
-@@ -548,6 +557,9 @@ void G_CacheMapData(void)
+@@ -548,6 +568,9 @@ void G_CacheMapData(void)
              gameHandleEvents();
              if (KB_KeyPressed(sc_Space))
                  break;

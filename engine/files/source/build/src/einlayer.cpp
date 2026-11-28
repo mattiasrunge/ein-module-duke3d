@@ -456,6 +456,9 @@ static void einReadEvents(void)
 // How many ticks the game has waited for.
 static uint32_t ticks;
 
+// When the last wait for a tick ended.
+static double turnEnded;
+
 static void einTurn(void)
 {
     static double lastTick;
@@ -464,6 +467,7 @@ static void einTurn(void)
     ticks++;
 
     double const now = emscripten_get_now(), interval = now - lastTick;
+    turnEnded = now;
     lastTick = now;
     if (interval > 0 && interval < 250)
         refreshfreq = clamp(refreshfreq * 0.9 + 100.0 / interval, 24.0, 1000.0);
@@ -487,6 +491,17 @@ bool einFrameDue(void)
     lastTicks = ticks;
     lastTime = now;
     return true;
+}
+
+// How long a loop that works between its polls works before it waits for a
+// tick (handleevents_working).
+#define EIN_WORK_MS 100.0
+
+int32_t handleevents_working(void)
+{
+    if (emscripten_get_now() - turnEnded < EIN_WORK_MS)
+        return 0;
+    return handleevents();
 }
 
 int32_t handleevents_peekkeys(void)

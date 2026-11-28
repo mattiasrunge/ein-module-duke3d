@@ -51,8 +51,7 @@ export const KNOWN_PACKS: KnownPack[] = [
   {
     id: 'voxels',
     title: 'Voxels',
-    about:
-      'Items, weapons and props as 3D voxel models in place of flat sprites, by ReaperMan, Borion and others. Starting a game takes about 20 seconds more while the models are read and built.',
+    about: 'Items, weapons and props as 3D voxel models in place of flat sprites, by ReaperMan, Borion and others. Each model is built the first time a level needs it.',
     file: 'duke3d_voxels.zip',
     url: 'https://github.com/NightFright2k19/duke3d_voxelpack/releases/download/2.0-rc2/duke3d_voxels.zip',
     sha256: 'cc2abd00a0fc72a6cbc32026bd7c68db58140f840cb8b94755f07b8e2c25e253',
@@ -68,5 +67,19 @@ export const KNOWN_PACKS: KnownPack[] = [
     sha256: 'd5bb376f36d00e08734901e051d8b98108c67d9b239cd221a0643545dbbdb216',
     size: 1_327_269,
     defs: ['duke3d_widefix.def'],
+  },
+  {
+    id: 'hrp-models',
+    title: 'HRP models',
+    about:
+      "The enemies, Duke and the other characters as 3D models in place of flat sprites, from the Duke Nukem 3D High Resolution Pack's Polymost edition, by its team. A 1 GB download, of which a game reads about 60 MB; a game takes a few seconds more to start.",
+    file: 'duke3d_hrp-r750.zip',
+    url: 'https://www.duke4.org/files/nightfright/hrp/duke3d_hrp-r750.zip',
+    sha256: 'e1fca8bec182006a8ef683e5da204e54e6dbc2575d6510e9738825adcb270b04',
+    size: 1_004_721_371,
+    // The models of the pack's Polymost edition, the frozen ones after the rest; its HUD weapons
+    // would replace the widescreen fixes' and its root duke3d.def is the Polymer edition, which this
+    // build leaves out.
+    defs: ['highres/sprites/characters_polymost.def', 'highres/sprites/monsters_polymost.def', 'highres/sprites/ice_polymost.def'],
   },
 ];
