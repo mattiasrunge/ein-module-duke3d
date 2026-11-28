@@ -61,7 +61,19 @@ const engine: Engine<DukeStart> = {
       ticked();
     };
     const ending = end;
-    duke = await startEmscripten<DukeModule>(boot, boot.payload.build, {
+    // What the game does as it starts, for the page's spinner, read from the lines it prints: its
+    // definitions, the packs' among them, one file after another, then the game itself.
+    const definitions = 1 + boot.payload.args.filter((arg) => arg === '-mh').length;
+    let read = 0;
+    const said = (line: string) => {
+      if (/ Loading (duke3d\.def|module )/.test(line)) {
+        read++;
+        boot.progress({ label: definitions > 1 ? "Reading the packs' definitions" : 'Reading the definitions', fraction: Math.min(1, read / definitions) });
+      } else if (/ Initializing console/.test(line)) boot.progress({ label: 'Starting the game', fraction: 1 });
+      boot.log(line);
+    };
+    boot.progress({ label: 'Starting Duke Nukem 3D' });
+    duke = await startEmscripten<DukeModule>({ ...boot, log: said }, boot.payload.build, {
       canvas: frames.canvas,
       // The game reads its GRP in many small pieces as it starts: small chunks fetch less of it.
       chunk: 256 * 1024,

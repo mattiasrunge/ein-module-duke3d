@@ -30,7 +30,7 @@ const AUTOLOAD = `${GAME_DIR}/autoload`;
  * player's account, names a player whose settings name no one yet (`-name`).
  */
 export async function startDuke(
-  { game, kept, map, name, sound, log, onKeep }: Pick<StartOptions<InstalledGame>, 'game' | 'kept' | 'map' | 'name' | 'sound' | 'log' | 'onKeep'>,
+  { game, kept, map, name, sound, log, onKeep, onProgress }: Pick<StartOptions<InstalledGame>, 'game' | 'kept' | 'map' | 'name' | 'sound' | 'log' | 'onKeep' | 'onProgress'>,
 ): Promise<RunningGame> {
   const at = (name: string) => `${GAME_DIR}/${name.toLowerCase()}`;
   const whole = await Promise.all(game.files.filter((name) => !LAZY.test(name)).map(async (name) => ({ path: at(name), data: await fetchFile(`${game.path}/${name}`) })));
@@ -80,5 +80,5 @@ export async function startDuke(
       },
       wheel: (up) => post({ type: 'input', data: { wheel: up } }),
     }),
-  }, { sound, log, onKeep });
+  }, { sound, log, onKeep, onProgress });
 }
