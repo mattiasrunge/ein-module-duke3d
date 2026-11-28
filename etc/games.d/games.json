@@ -9,5 +9,18 @@
     { "place": "own-folder", "label": "a Duke Nukem 3D GRP", "name": "^duke3d.*\\.grp$", "magic": [{ "at": 0, "text": "KenSilverman" }] },
     { "place": "module", "label": "a Duke Nukem 3D game", "contains": "duke3d.grp" },
     { "place": "game", "label": "a Duke Nukem 3D user map", "name": "\\.map$", "magic": [{ "at": 0, "hex": "07000000" }] }
-  ]
+  ],
+  "multiplayer": {
+    "modes": [
+      { "value": "dukematch", "label": "DukeMatch" },
+      { "value": "coop", "label": "Cooperative" },
+      { "value": "dukematch-nospawn", "label": "DukeMatch (no spawn)" },
+      { "value": "team", "label": "Team DukeMatch" },
+      { "value": "lms", "label": "Last Man Standing" }
+    ],
+    "maxPlayers": 8,
+    "defaultPlayers": 4,
+    "defaultMaps": ["e1l1"],
+    "transport": "relay"
+  }
 }

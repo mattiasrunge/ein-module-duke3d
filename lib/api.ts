@@ -1,3 +1,6 @@
+/** A level of a game's episodes: its map's name without `.map` in lower case (`e1l1`), Duke's volume and level from 0, and its title. */
+export type Level = { map: string; volume: number; level: number; title: string };
+
 /**
  * A game in the games folder, as `duke3d-games` answers it: what the Games page reads of it (its
  * `GameEntry`), and what the adapter needs to start it: its GRP and the files beside it.
@@ -22,8 +25,17 @@ export type InstalledGame = {
   files: string[];
   /** Bytes, the files together. */
   size: number;
-  /** Its user maps, the `.map` files in its folder, by name without `.map`; none when it has none, or is the shareware episode, which plays none. */
+  /** Its episodes' levels whose maps its GRP holds, in the order the episodes play them. */
+  levels?: Level[];
+  /**
+   * The maps it is started or hosted on: its levels' (`e1l1`), then its user maps, the `.map` files in
+   * its folder, by name without `.map`; the shareware episode plays no user maps.
+   */
   maps?: string[];
+  /** Its levels' titles, by their maps' names: `e1l1`, `Hollywood Holocaust`. */
+  mapTitles?: Record<string, string>;
+  /** Whether it can be hosted for others to join: it has maps. */
+  hostable?: boolean;
 };
 
 /** A free game the module fetches with `duke3d-fetch`, while its folder is not there. */

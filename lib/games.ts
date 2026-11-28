@@ -12,6 +12,12 @@ export const GAMES = '/groups/users/duke3d';
 /** A base GRP, as EDuke32 looks for one: `duke3d.grp`, `DUKE3D.GRP`, `duke3d_atomic.grp`. */
 export const GRP_FILE = /^duke3d.*\.grp$/i;
 
+/**
+ * The game types a game is hosted in, as the drop-in's `multiplayer.modes` names them, by Duke's
+ * number for each (`ud.m_coop`, global.cpp's `g_gametypeNames`).
+ */
+export const MODES: Record<string, number> = { dukematch: 0, coop: 1, 'dukematch-nospawn': 2, team: 3, lms: 5 };
+
 /** A user map beside the GRP, by its name without `.map`, which the game is started on with `-map`. */
 export const MAP_FILE = /^(.+)\.map$/i;
 

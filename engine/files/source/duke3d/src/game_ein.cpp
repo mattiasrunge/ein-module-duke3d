@@ -15,7 +15,8 @@
 
 // game_ein.cpp -- what EiN's engine worker asks of the game itself, between
 // its ticks: whether a menu or the console is up and its settings written;
-// and a new player's settings, for one who has no eduke32.cfg yet.
+// the user map a hosted game is played on; and a new player's settings, for
+// one who has no eduke32.cfg yet.
 
 #include "duke3d.h"
 #include "osd.h"
@@ -33,6 +34,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE int ein_menu(void)
 extern "C" EMSCRIPTEN_KEEPALIVE void ein_write_config(void)
 {
     CONFIG_WriteSetup(0);
+}
+
+// The user map a hosted game is played on, `file` in the game's directory: the
+// level the netcode's User Map (volume 1, level 8) loads. Set by the worker's
+// transport once the game has started, since one named at the start is played
+// alone at once, as -map plays it.
+extern "C" EMSCRIPTEN_KEEPALIVE void ein_board(const char *file)
+{
+    Bstrncpyz(boardfilename, file, BMAX_PATH);
 }
 
 static void G_EinMapKey(int function, char const *key1, char const *key2)

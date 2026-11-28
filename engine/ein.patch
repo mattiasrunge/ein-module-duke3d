@@ -1,5 +1,5 @@
 diff --git a/Common.mak b/Common.mak
-index eb931c3..7d21432 100644
+index eb931c3..15e5c99 100644
 --- a/Common.mak
 +++ b/Common.mak
 @@ -77,7 +77,10 @@ ifeq ($(PLATFORM),WII)
@@ -19,9 +19,9 @@ index eb931c3..7d21432 100644
      # no system libs for vorbis/flac. SDL2 comes from the Emscripten port
      # (-sUSE_SDL=2), not from the system.
 +    # EIN=1: the game for EiN's engine worker (einlayer.cpp, driver_ein.cpp): Polymost and the
-+    # classic renderer on WebGL 2, no SDL window, events or audio, no game data linked in. The
-+    # fork's game code calls into the NetDuke32 netcode throughout, so that is compiled, over its
-+    # no-op transport (net_transport_stub.cpp): nothing reaches the network.
++    # classic renderer on WebGL 2, no SDL window, events or audio, no game data linked in. Playing
++    # together is the NetDuke32 netcode, over the worker's transport (ein-library.js), which carries
++    # it through the games module's relay.
 +    ifeq (1,$(EIN))
 +        override EM_GL := 1
 +        override NETDUKE32 := 1
@@ -71,7 +71,7 @@ index eb931c3..7d21432 100644
 +            LINKERFLAGS += -sENVIRONMENT=worker -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createEDuke32
 +            LINKERFLAGS += -sINVOKE_RUN=0 -sFORCE_FILESYSTEM=1
 +            LINKERFLAGS += --js-library platform/emscripten/ein-library.js
-+            LINKERFLAGS += -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_ein_key,_ein_char,_ein_mouse,_ein_mouse_button,_ein_wheel,_ein_menu,_ein_write_config,_ein_frames,_ein_audio_rate,_ein_audio_render
++            LINKERFLAGS += -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_ein_key,_ein_char,_ein_mouse,_ein_mouse_button,_ein_wheel,_ein_menu,_ein_write_config,_ein_frames,_ein_audio_rate,_ein_audio_render,_ein_board,_Net_ReceiveFrame,_Net_PeerEvent,_Net_SetLocalIndex,_Net_SnapshotReady,_Net_GetSpawnTable,_Net_SetSpawnTable,_Net_GetBotMask,_NetMenu_SetStatus,_NetMenu_OnJoined
 +            LINKERFLAGS += -sEXPORTED_RUNTIME_METHODS=FS,HEAPU8,HEAP16,HEAPU32,callMain,stringToNewUTF8,UTF8ToString
 +        else
 +            # Expose the MEMFS runtime API so the host page can enumerate loaded GRP
@@ -87,7 +87,7 @@ index eb931c3..7d21432 100644
              LINKERFLAGS += -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_Net_ReceiveFrame,_Net_PeerEvent,_Net_SetLocalIndex,_NetMenu_SetStatus,_NetMenu_SetLobby,_NetMenu_SetRoster,_NetMenu_SetGrpList,_NetMenu_SetProgress,_NetMenu_OnJoined,_Web_SetMute,_Net_SnapshotReady,_Web_ForceDesync,_Web_SetPredictMode,_Web_SetForensics,_Web_SetLocalBot,_Net_GetBotMask,_Net_GetSpawnTable,_Net_SetSpawnTable,_Web_TestAim,_Web_AimGapAng,_Web_AimGapHoriz,_Web_AimAtNearestPic,_Web_TestFire,_Web_TestDrive,_Web_PicAlive,_Web_NetProbe,_Web_SetStreamMode,_Web_SetMinPlayers,_Web_SetGametype
          endif
 diff --git a/GNUmakefile b/GNUmakefile
-index d3ede26..96a6b61 100644
+index d3ede26..329df47 100644
 --- a/GNUmakefile
 +++ b/GNUmakefile
 @@ -238,7 +238,9 @@ engine_cflags :=
@@ -140,8 +140,8 @@ index d3ede26..96a6b61 100644
      duke3d_excl += network.cpp
 -    ifeq ($(PLATFORM),EMSCRIPTEN)
 +    ifeq (1,$(EIN))
-+        # EiN's engine worker: the no-op stub, no network
-+        duke3d_excl += net_transport_native.cpp
++        # EiN's engine worker: the transport is the worker's, through ein-library.js
++        duke3d_excl += net_transport_stub.cpp net_transport_native.cpp
 +    else ifeq ($(PLATFORM),EMSCRIPTEN)
          # browser: the JS --js-library seam replaces the stub; native impl excluded
          duke3d_excl += net_transport_stub.cpp net_transport_native.cpp
@@ -1575,7 +1575,7 @@ index e052e0e..f0d7029 100644
              auto const grptype = FindGrpInfo(crcval, st.st_size);
  
 diff --git a/source/duke3d/src/menus.cpp b/source/duke3d/src/menus.cpp
-index 1bc19f6..7fc2711 100644
+index 1bc19f6..5e63432 100644
 --- a/source/duke3d/src/menus.cpp
 +++ b/source/duke3d/src/menus.cpp
 @@ -401,7 +401,7 @@ MAKE_MENU_TOP_ENTRYLINK( "Multiplayer", MEF_MainMenu, MAIN_MULTIPLAYER, MENU_NET
@@ -1596,129 +1596,154 @@ index 1bc19f6..7fc2711 100644
      &ME_MAIN_MULTIPLAYER,   // reachable from ESC in-game too (live request)
  #endif
      &ME_MAIN_OPTIONS,
-@@ -1548,9 +1548,9 @@ static MenuEntry_t *MEL_NETJOIN[] = {
- #ifdef NETMENU
- // ===========================================================================
- //  In-engine WebRTC/Nostr multiplayer menu (eduke32-wasm) — a thin renderer over
--//  window.DukeNet. JS pushes lobby/roster/status/progress through the NetMenu_*
-+//  globalThis.DukeNet. JS pushes lobby/roster/status/progress through the NetMenu_*
- //  setters below (parsed ONCE into these cached structs, redrawn every frame);
--//  menu actions call back into window.DukeNet / window.NetMenu via run_script.
-+//  menu actions call back into globalThis.DukeNet / globalThis.NetMenu via run_script.
- // ===========================================================================
- 
- #define NET_BROWSE_MAX 48
-@@ -1618,7 +1618,7 @@ static void netmenu_js_quote(char *dst, int dstsize, const char *src)
+@@ -1617,6 +1617,31 @@ static void netmenu_js_quote(char *dst, int dstsize, const char *src)
+     dst[j] = 0;
  }
  
++#ifdef EDUKE32_EIN
++// EiN: the transport is the engine worker's, Module.einDuke (ui/duke3d/net.ts),
++// called through these compiled functions: the worker's Content Security Policy
++// forbids eval, so emscripten_run_script throws there. Hosting and joining are
++// the Games page's, so the menus' own host, join and browse do nothing.
++
++// The level the game starts on, once, as its menu comes up: the hosted game
++// this engine hosts (the worker's transport says when), or the level a player
++// chose to play alone (Module.einLevel). volume << 16 | level << 8 | game type,
++// and EIN_ONLINE for a hosted game; -1 for none.
++#define EIN_ONLINE (1 << 24)
++EM_JS(int, ein_launch, (void), {
++    const hosted = Module.einDuke && Module.einDuke.launch();
++    const launch = hosted || Module.einLevel;
++    Module.einLevel = undefined;
++    return launch ? (launch.volume << 16) | (launch.level << 8) | (launch.mode || 0) | (hosted ? 1 << 24 : 0) : -1;
++});
++EM_JS(void, ein_net_leave, (void), {
++    if (Module.einDuke) Module.einDuke.leave();
++});
++EM_JS(void, ein_net_send_snapshot, (int seatMask, int slot, int plc, int isJoin), {
++    if (Module.einDuke) Module.einDuke.sendSnapshot(seatMask, slot, plc, isJoin);
++});
++#endif
++
  // --- action bridge (C -> transport) ----------------------------------------
--// Browser: run_script into window.NetMenu (the JS transport). Native: call the
-+// Browser: run_script into globalThis.NetMenu (the JS transport). Native: call the
+ // Browser: run_script into window.NetMenu (the JS transport). Native: call the
  // C++ transport API directly (net_transport_native.cpp), which drives the same
- // NetMenu_* setters back into this menu.
- #ifdef NETNATIVE
-@@ -1653,7 +1653,7 @@ static void netmenu_host(void)
+@@ -1649,7 +1674,8 @@ static void netmenu_host(void)
+     else
+         ud.m_dmflags |= DMFLAG_NOAUTOAIM;
+     LOG_F(INFO, "[aim] match autoaim: %s", s_netAutoAim ? "allowed" : "forced off");
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++#elif defined __EMSCRIPTEN__
      char name[80], player[80], script[256];
      netmenu_js_quote(name, sizeof name, s_netMatchName);
      netmenu_js_quote(player, sizeof player, szPlayerName);
--    Bsnprintf(script, sizeof script, "window.NetMenu&&window.NetMenu.host(%d,%s,%d,%s,%d)",
-+    Bsnprintf(script, sizeof script, "globalThis.NetMenu&&globalThis.NetMenu.host(%d,%s,%d,%s,%d)",
-               s_netHostPublic ? 1 : 0, name, (int)s_netMaxPlayers, player, s_netLocalOnly ? 1 : 0);
-     emscripten_run_script(script);
- #else
-@@ -1671,7 +1671,7 @@ static void netmenu_join_row(int idx)
- #ifdef __EMSCRIPTEN__
+@@ -1668,7 +1694,9 @@ static void netmenu_host(void)
+ static void netmenu_join_row(int idx)
+ {
+     Net_SetLocalBot(0);
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++    (void)idx;
++#elif defined __EMSCRIPTEN__
      char player[80], script[160];
      netmenu_js_quote(player, sizeof player, szPlayerName);
--    Bsnprintf(script, sizeof script, "window.NetMenu&&window.NetMenu.joinRow(%d,%s)", idx, player);
-+    Bsnprintf(script, sizeof script, "globalThis.NetMenu&&globalThis.NetMenu.joinRow(%d,%s)", idx, player);
-     emscripten_run_script(script);
- #else
-     (void)idx;   // native public-match browse not wired yet
-@@ -1687,7 +1687,7 @@ static void netmenu_join_code(void)
-     char player[80];
-     netmenu_js_quote(code, sizeof code, s_netJoinCode);
-     netmenu_js_quote(player, sizeof player, szPlayerName);
--    Bsnprintf(script, sizeof script, "window.NetMenu&&window.NetMenu.joinCode(%s,%s)", code, player);
-+    Bsnprintf(script, sizeof script, "globalThis.NetMenu&&globalThis.NetMenu.joinCode(%s,%s)", code, player);
-     emscripten_run_script(script);
- #else
-     net_native_join_code(s_netJoinCode, szPlayerName);
-@@ -1696,7 +1696,7 @@ static void netmenu_join_code(void)
+     Bsnprintf(script, sizeof script, "window.NetMenu&&window.NetMenu.joinRow(%d,%s)", idx, player);
+@@ -1680,7 +1708,8 @@ static void netmenu_join_row(int idx)
+ static void netmenu_join_code(void)
+ {
+     Net_SetLocalBot(0);
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++#elif defined __EMSCRIPTEN__
+     // Static: a full invite is ~500 chars and js_quote can double it; the old
+     // code[176]/script[320] silently truncated every real invite into "invalid code".
+     static char code[2112], script[2304];
+@@ -1695,7 +1724,7 @@ static void netmenu_join_code(void)
+ }
  static void netmenu_set_ping(int idx)
  {
- #ifdef __EMSCRIPTEN__
--    char s[96]; Bsnprintf(s, sizeof s, "window.NetMenu&&window.NetMenu.setPing(%d)", idx); emscripten_run_script(s);
-+    char s[96]; Bsnprintf(s, sizeof s, "globalThis.NetMenu&&globalThis.NetMenu.setPing(%d)", idx); emscripten_run_script(s);
+-#ifdef __EMSCRIPTEN__
++#if defined __EMSCRIPTEN__ && !defined EDUKE32_EIN
+     char s[96]; Bsnprintf(s, sizeof s, "window.NetMenu&&window.NetMenu.setPing(%d)", idx); emscripten_run_script(s);
  #else
      (void)idx;
- #endif
-@@ -1704,7 +1704,7 @@ static void netmenu_set_ping(int idx)
+@@ -1703,7 +1732,7 @@ static void netmenu_set_ping(int idx)
+ }
  static void netmenu_set_share(int shareOn)
  {
- #ifdef __EMSCRIPTEN__
--    char s[96]; Bsnprintf(s, sizeof s, "window.NetMenu&&window.NetMenu.setAllowDl(%d)", shareOn ? 0 : 1); emscripten_run_script(s);
-+    char s[96]; Bsnprintf(s, sizeof s, "globalThis.NetMenu&&globalThis.NetMenu.setAllowDl(%d)", shareOn ? 0 : 1); emscripten_run_script(s);
+-#ifdef __EMSCRIPTEN__
++#if defined __EMSCRIPTEN__ && !defined EDUKE32_EIN
+     char s[96]; Bsnprintf(s, sizeof s, "window.NetMenu&&window.NetMenu.setAllowDl(%d)", shareOn ? 0 : 1); emscripten_run_script(s);
  #else
      (void)shareOn;   // native GRP sharing not wired yet
- #endif
-@@ -1712,7 +1712,7 @@ static void netmenu_set_share(int shareOn)
+@@ -1711,7 +1740,9 @@ static void netmenu_set_share(int shareOn)
+ }
  static void netmenu_browse(int start)
  {
- #ifdef __EMSCRIPTEN__
--    emscripten_run_script(start ? "window.NetMenu&&window.NetMenu.startBrowse()" : "window.NetMenu&&window.NetMenu.stopBrowse()");
-+    emscripten_run_script(start ? "globalThis.NetMenu&&globalThis.NetMenu.startBrowse()" : "globalThis.NetMenu&&globalThis.NetMenu.stopBrowse()");
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++    (void)start;
++#elif defined __EMSCRIPTEN__
+     emscripten_run_script(start ? "window.NetMenu&&window.NetMenu.startBrowse()" : "window.NetMenu&&window.NetMenu.stopBrowse()");
  #else
      net_native_browse(start);
- #endif
-@@ -1722,7 +1722,7 @@ static void netmenu_leave(void)
+@@ -1721,7 +1752,9 @@ static void netmenu_leave(void)
+ {
      s_netHosting = 0;
      Net_SetLocalBot(0);
- #ifdef __EMSCRIPTEN__
--    emscripten_run_script("window.NetMenu&&window.NetMenu.leave()");
-+    emscripten_run_script("globalThis.NetMenu&&globalThis.NetMenu.leave()");
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++    ein_net_leave();
++#elif defined __EMSCRIPTEN__
+     emscripten_run_script("window.NetMenu&&window.NetMenu.leave()");
  #else
      net_native_leave();
- #endif
-@@ -1731,7 +1731,7 @@ static void netmenu_pull_grp_labels(void)
+@@ -1729,7 +1762,9 @@ static void netmenu_leave(void)
+ }
+ static void netmenu_pull_grp_labels(void)
  {
- #ifdef __EMSCRIPTEN__
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++    s_netGrpLabels[0] = 0;
++#elif defined __EMSCRIPTEN__
      const char *s = emscripten_run_script_string(
--        "(function(){try{var g=window.DukeNet&&DukeNet.getLocalGrp();return g&&g.labels?g.labels.join(', '):'';}catch(e){return '';}})()");
-+        "(function(){try{var g=globalThis.DukeNet&&DukeNet.getLocalGrp();return g&&g.labels?g.labels.join(', '):'';}catch(e){return '';}})()");
+         "(function(){try{var g=window.DukeNet&&DukeNet.getLocalGrp();return g&&g.labels?g.labels.join(', '):'';}catch(e){return '';}})()");
      netmenu_clamp(s_netGrpLabels, sizeof s_netGrpLabels, s);
- #else
-     netmenu_clamp(s_netGrpLabels, sizeof s_netGrpLabels, net_native_grp_label());
-@@ -1805,8 +1805,8 @@ extern "C" void Web_MuteCfgGuard(int preWrite)
+@@ -1804,7 +1839,9 @@ extern "C" void Web_MuteCfgGuard(int preWrite)
+ 
  extern "C" void NetMenu_SetInGame(int in_game)
  {
- #ifdef __EMSCRIPTEN__
--    emscripten_run_script(in_game ? "window.DukeNet&&window.DukeNet.setInGame(true)"
--                                  : "window.DukeNet&&window.DukeNet.setInGame(false)");
-+    emscripten_run_script(in_game ? "globalThis.DukeNet&&globalThis.DukeNet.setInGame(true)"
-+                                  : "globalThis.DukeNet&&globalThis.DukeNet.setInGame(false)");
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++    (void)in_game;
++#elif defined __EMSCRIPTEN__
+     emscripten_run_script(in_game ? "window.DukeNet&&window.DukeNet.setInGame(true)"
+                                   : "window.DukeNet&&window.DukeNet.setInGame(false)");
  #else
-     net_native_set_ingame(in_game);
- #endif
-@@ -1820,7 +1820,7 @@ static void netmenu_send_snapshot(int seatMask)
- #ifdef __EMSCRIPTEN__
+@@ -1817,7 +1854,9 @@ extern "C" void NetMenu_SetInGame(int in_game)
+ // Legacy RESYNC broadcast: every veteran reloads and rendezvouses (mode 0).
+ static void netmenu_send_snapshot(int seatMask)
+ {
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++    ein_net_send_snapshot(seatMask, -1, 0, 0);
++#elif defined __EMSCRIPTEN__
      char scr[160];
      Bsnprintf(scr, sizeof scr,
--              "window.DukeNet&&window.DukeNet.sendSnapshot&&window.DukeNet.sendSnapshot(%d,-1,0,0)", seatMask);
-+              "globalThis.DukeNet&&globalThis.DukeNet.sendSnapshot&&globalThis.DukeNet.sendSnapshot(%d,-1,0,0)", seatMask);
-     emscripten_run_script(scr);
- #else
-     net_native_send_snapshot(seatMask, -1, 0, 0);
-@@ -1835,7 +1835,7 @@ void netmenu_send_snapshot_to(int seatMask, int slot, int plc, int isJoin)
- #ifdef __EMSCRIPTEN__
+               "window.DukeNet&&window.DukeNet.sendSnapshot&&window.DukeNet.sendSnapshot(%d,-1,0,0)", seatMask);
+@@ -1832,7 +1871,9 @@ static void netmenu_send_snapshot(int seatMask)
+ // anything. Called from the oldnet.cpp join state machine.
+ void netmenu_send_snapshot_to(int seatMask, int slot, int plc, int isJoin)
+ {
+-#ifdef __EMSCRIPTEN__
++#if defined EDUKE32_EIN
++    ein_net_send_snapshot(seatMask, slot, plc, isJoin);
++#elif defined __EMSCRIPTEN__
      char scr[192];
      Bsnprintf(scr, sizeof scr,
--              "window.DukeNet&&window.DukeNet.sendSnapshot&&window.DukeNet.sendSnapshot(%d,%d,%d,%d)",
-+              "globalThis.DukeNet&&globalThis.DukeNet.sendSnapshot&&globalThis.DukeNet.sendSnapshot(%d,%d,%d,%d)",
-               seatMask, slot, plc, isJoin);
-     emscripten_run_script(scr);
- #else
-@@ -9316,7 +9316,7 @@ void M_DisplayMenus(void)
+               "window.DukeNet&&window.DukeNet.sendSnapshot&&window.DukeNet.sendSnapshot(%d,%d,%d,%d)",
+@@ -9316,7 +9357,7 @@ void M_DisplayMenus(void)
      // live-reported "guest sits on the wallpaper while the host waits for players".
      {
          auto &nngm = g_player[myconnectindex].ps->gm;
@@ -1727,6 +1752,72 @@ index 1bc19f6..7fc2711 100644
          // Debug/harness surface: expose {open, id} of the menu to the page whenever it
          // changes. Costs one string eval per menu TRANSITION (not per frame); lets the
          // headless rig wait for real menu states instead of guessing at timings, and
+@@ -9485,6 +9526,38 @@ void M_DisplayMenus(void)
+             return; // level is entering; skip the rest of this menu frame
+         }
+ #endif // NETNATIVE
++#ifdef EDUKE32_EIN
++        // HOST, in EiN: the game hosted on the Games page starts as soon as the
++        // menu is up, on its level and in its game type, and everyone who joins
++        // joins it running (ui/duke3d/net.ts says when and which). A level
++        // chosen to play alone starts as New Game starts it: so the shareware
++        // episode, which refuses -map, starts on any of its levels too.
++        if (nngm & MODE_MENU)
++        {
++            int const launch = ein_launch();
++            if (launch >= 0 && !(launch & EIN_ONLINE))
++            {
++                ud.m_volume_number = (launch >> 16) & 255;
++                ud.m_level_number  = (launch >> 8) & 255;
++                Menu_Close(myconnectindex);
++                G_NewGame_EnterLevel();
++                return;
++            }
++            if (launch >= 0 && myconnectindex == connecthead)
++            {
++                ud.m_coop = launch & 255;
++                // Each player's own autoaim setting holds, as in Duke's own
++                // network games.
++                ud.m_dmflags &= ~DMFLAG_NOAUTOAIM;
++                // Only people play: no CPU players fill the empty seats.
++                s_netMinPlayers = 1;
++                s_netHosting = 1;
++                Menu_Close(myconnectindex);
++                netmenu_relaunch((launch >> 16) & 255, (launch >> 8) & 255);
++                return;
++            }
++        }
++#endif
+         // GUEST: the NEW_GAME packet handler (oldnet.cpp, inside net_poll) deferred MODE_NEWGAME.
+         // Enter the same level the host chose (ud.m_* were set from the packet). numplayers>1,
+         // so G_NewGame_EnterLevel runs the tic-0 barrier that rendezvouses with the host.
+diff --git a/source/duke3d/src/oldnet.cpp b/source/duke3d/src/oldnet.cpp
+index 00b3677..2d887a6 100644
+--- a/source/duke3d/src/oldnet.cpp
++++ b/source/duke3d/src/oldnet.cpp
+@@ -8763,6 +8763,11 @@ void Net_ApplyPendingJoins(void)
+ #else
+         initprintf("net: player %d seated at tic %d (%d players, sprite %d)\n",
+                    k, movefifoplc, numplayers, (int)g_player[k].ps->i);
++#endif
++#ifdef EDUKE32_EIN
++        // Everyone says their name again, so the one seated learns everyone's and
++        // everyone theirs (the host passes each on).
++        Net_SendClientInfo();
+ #endif
+     }
+ }
+@@ -12243,6 +12248,10 @@ void Net_WaitForPlayers()
+             }
+ 
+             LOG_F(INFO, "[barrier] all seats ready after %ds", (int)((timerGetTicks() - waitStart) / 1000));
++#ifdef EDUKE32_EIN
++            // The players entered the level together: each says their name.
++            Net_SendClientInfo();
++#endif
+             P_SetGamePalette(g_player[myconnectindex].ps, oldPal, 11);
+             return;
+         }
 diff --git a/source/duke3d/src/premap.cpp b/source/duke3d/src/premap.cpp
 index 1c84864..e465dbf 100644
 --- a/source/duke3d/src/premap.cpp
@@ -1810,6 +1901,19 @@ index 66a7553..93fa51d 100644
      if (!g_netServer && ud.multimode < 2)
      {
          OSD_Printf("Saved: %s\n", fn);
+diff --git a/source/duke3d/src/screens.cpp b/source/duke3d/src/screens.cpp
+index 9cf0779..29e01ad 100644
+--- a/source/duke3d/src/screens.cpp
++++ b/source/duke3d/src/screens.cpp
+@@ -1350,7 +1350,7 @@ void G_DisplayRest(int32_t smoothratio)
+ 
+     G_PrintFPS();
+ 
+-#if defined(NETDUKE32)
++#if defined(NETDUKE32) && !defined(EDUKE32_EIN)
+     // Net-debug HUD (multiplayer): build tag + packet/stream counters + how
+     // many tics stale each remote player's last update is. Screenshot this in
+     // the real session -- big 'age' numbers = updates not arriving (transport),
 diff --git a/source/mact/src/control.cpp b/source/mact/src/control.cpp
 index bf31ced..2c93207 100644
 --- a/source/mact/src/control.cpp

@@ -9,11 +9,14 @@
  * true colour or the classic renderer's palette alike, and the canvas is taken as the frame.
  */
 import { type EmscriptenFS, type EmscriptenModule, type Engine, exitStatus, FrameCanvas, heapSound, serveEngine, startEmscripten } from '@games/engine';
+import { DukeLink, type NetModule } from './net.ts';
 import { type DukeStart, GAME_DIR } from './start.ts';
 
 /** What the engine's platform layer exports (`engine/`), beside Emscripten's own. */
-type DukeModule = EmscriptenModule & {
+type DukeModule = EmscriptenModule & NetModule & {
   FS: EmscriptenFS & { chdir(path: string): void };
+  einDuke?: DukeLink;
+  einLevel?: { volume: number; level: number };
   callMain(args: string[]): number;
   _ein_key(pressed: number, scancode: number): void;
   _ein_char(character: number): void;
@@ -31,6 +34,8 @@ let duke: DukeModule;
 const frames = new FrameCanvas(1280, 720);
 let drawn = 0;
 let sound: ((count: number) => Int16Array<ArrayBuffer>) | undefined;
+/** The hosted game's wire, when the game is played together. */
+let link: DukeLink | undefined;
 /** Lets the game, waiting for its next tick, run on; nothing while it runs or once it has ended. */
 let waiting: (() => void) | undefined;
 /** Ends the tick running, once the game waits again or has ended. */
@@ -77,10 +82,11 @@ const engine: Engine<DukeStart> = {
       canvas: frames.canvas,
       // The game reads its GRP in many small pieces as it starts: small chunks fetch less of it.
       chunk: 256 * 1024,
-      // The game writes its saves and its settings in its directory, by their names.
+      // The game writes its saves and its settings in its directory, by their names; the snapshot
+      // a hosted game's netcode saves for a late joiner is not the player's to keep.
       written: (path) => {
         const name = path.split('/').at(-1) ?? path;
-        return { path: `${GAME_DIR}/${name}`, name };
+        return name === 'latejoin.esv' ? undefined : { path: `${GAME_DIR}/${name}`, name };
       },
       module: {
         einFrame: () =>
@@ -98,6 +104,12 @@ const engine: Engine<DukeStart> = {
       duke._ein_audio_rate(boot.sampleRate);
       sound = heapSound(duke, (at, count) => duke._ein_audio_render(at, count));
     }
+    // A hosted game is played through the relay, the netcode's wire (net.ts); a level chosen to play
+    // alone the game starts as its menu comes up (menus.cpp, ein_launch).
+    if (boot.payload.online && boot.network?.relay) {
+      link = new DukeLink(duke, boot.network, boot.payload.online, boot.payload.name, boot.log);
+      duke.einDuke = link;
+    } else if (boot.payload.level) duke.einLevel = boot.payload.level;
     // main runs until the game first waits for a tick.
     try {
       duke.callMain(boot.payload.args);
@@ -109,6 +121,7 @@ const engine: Engine<DukeStart> = {
     const resume = waiting;
     if (!resume) return;
     waiting = undefined;
+    link?.step(duke._ein_menu() !== 0);
     return new Promise<void>((done) => {
       ticking = done;
       resume();
