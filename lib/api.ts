@@ -52,5 +52,7 @@ export type Pack = {
   size: number;
   /** Its definitions files, which the game loads as modules of their own. */
   defs?: string[];
+  /** The module's own definitions files for it, in the module's `assets/packs/`, loaded as modules after `defs`. */
+  assets?: string[];
   fetched: boolean;
 };

@@ -6,7 +6,16 @@ import { KNOWN_PACKS, PACKS } from '@duke3d/packs';
 
 const duke3dPacks = async (cmd: Command): CmdReturn => {
   const here = new Set((await cmd.sys.vfs.children(cmd.access, PACKS).catch(() => [])).map((child) => child.name));
-  const packs: Pack[] = KNOWN_PACKS.map(({ id, title, about, file, size, defs }) => ({ id, title, about, file, size, ...(defs ? { defs } : {}), fetched: here.has(file) }));
+  const packs: Pack[] = KNOWN_PACKS.map(({ id, title, about, file, size, defs, assets }) => ({
+    id,
+    title,
+    about,
+    file,
+    size,
+    ...(defs ? { defs } : {}),
+    ...(assets ? { assets } : {}),
+    fetched: here.has(file),
+  }));
   if (cmd.json) await cmd.writeJSON(packs);
   else for (const pack of packs) await cmd.writeLn(`${pack.id}  ${pack.title}  ${pack.fetched ? 'fetched' : `duke3d-fetch ${pack.id}`}`);
   return 0;
@@ -19,7 +28,7 @@ duke3dPacks.spec = {
   args: [],
   flags: [],
   examples: ['duke3d-packs'],
-  returns: 'One entry per pack: its id (what duke3d-fetch takes), title, about, its file, size in bytes, its definitions files when it has any, and whether it is fetched; every game loads those fetched.',
+  returns: 'One entry per pack: its id (what duke3d-fetch takes), title, about, its file, size in bytes, its definitions files and the module\'s own for it when it has any, and whether it is fetched; every game loads those fetched.',
 };
 
 export default duke3dPacks;

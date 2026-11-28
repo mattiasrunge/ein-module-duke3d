@@ -26,6 +26,8 @@ export type KnownPack = {
    * its own (`-mh`), as the `duke3d.def` packs bring would hide each other's.
    */
   defs?: string[];
+  /** Definitions files of the module's own for it, in `assets/packs/`, loaded as modules after `defs`. */
+  assets?: string[];
 };
 
 /** The packs, in the order the game loads them, later ones over earlier ones' files; `bin/duke3d-fetch` has their URLs and SHA-256 too. */
@@ -69,17 +71,17 @@ export const KNOWN_PACKS: KnownPack[] = [
     defs: ['duke3d_widefix.def'],
   },
   {
-    id: 'hrp-models',
-    title: 'HRP models',
+    id: 'hrp',
+    title: 'High Resolution Pack',
     about:
-      "The enemies, Duke and the other characters as 3D models in place of flat sprites, from the Duke Nukem 3D High Resolution Pack's Polymost edition, by its team. A 1 GB download, of which a game reads about 60 MB, the first time in a browser: that start takes longer, the next ones read it from the browser.",
+      "Hi-res textures and skies, and the enemies, Duke and the other characters as 3D models, from the Duke Nukem 3D High Resolution Pack's Polymost edition, by its team. A 1 GB download, of which a level reads 100 to 200 MB the first time in a browser: that start, and the first moments of a level, take longer, and the browser keeps what was read for the next.",
     file: 'duke3d_hrp-r750.zip',
     url: 'https://www.duke4.org/files/nightfright/hrp/duke3d_hrp-r750.zip',
     sha256: 'e1fca8bec182006a8ef683e5da204e54e6dbc2575d6510e9738825adcb270b04',
     size: 1_004_721_371,
-    // The models of the pack's Polymost edition, the frozen ones after the rest; its HUD weapons
-    // would replace the widescreen fixes' and its root duke3d.def is the Polymer edition, which this
-    // build leaves out.
-    defs: ['highres/sprites/characters_polymost.def', 'highres/sprites/monsters_polymost.def', 'highres/sprites/ice_polymost.def'],
+    // The pack's Polymost edition without its HUD weapons and HUD and menu art, which would replace
+    // the widescreen fixes', and without its root duke3d.def, the Polymer edition, which this build
+    // leaves out.
+    assets: ['hrp-polymost.def'],
   },
 ];

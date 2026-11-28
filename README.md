@@ -194,13 +194,16 @@ players have made for Duke Nukem 3D, with what each is, who made it and its size
   Borion and others; each model is built the first time a level needs it.
 - **Widescreen fixes** (1 MB): the status bar, the weapons and the menus drawn
   for widescreen, by NightFright and Fox.
-- **HRP models** (1 GB): the enemies, Duke and the other characters as 3D
-  models, from the [Duke Nukem 3D High Resolution Pack](https://hrp.duke4.net)'s
-  Polymost edition. Only its models are loaded: its hi-res textures and HUD
-  weapons are left out, and so is its Polymer edition, which this build has no
-  renderer for. A game reads about 60 MB of it, the first time in a browser,
-  which makes that start take longer; the browser keeps what was read for the
-  next starts.
+- **High Resolution Pack** (1 GB): hi-res textures and skies, and the
+  enemies, Duke and the other characters as 3D models, from the
+  [Duke Nukem 3D High Resolution Pack](https://hrp.duke4.net)'s Polymost
+  edition. Its HUD weapons and HUD and menu art are left out, which would replace
+  the widescreen fixes', and so is its Polymer edition, which this build has no
+  renderer for (`assets/packs/hrp-polymost.def` says what is loaded). A level
+  reads 100 to 200 MB of it, and the graphics card holds 300 to 400 MB of its
+  textures; the first time in a browser that level starts later and its first
+  moments are slow while its textures come, and the browser keeps what was read
+  for the next starts.
 
 Nothing is fetched until someone chooses to: **Fetch** (an administrator's, as
 EiN lets only the administrator fetch from the internet) downloads a pack from
@@ -210,7 +213,7 @@ fetched, from the next time it starts, in the order listed, read from EiN as the
 game asks for their files. Each pack's definitions, what its files replace, are
 loaded as modules of their own, so packs do not hide each other's. In EiN's
 terminal `duke3d-packs` lists them and `duke3d-fetch <pack>` (`sc55`, `psx`,
-`voxels`, `widescreen`, `hrp-models`) fetches one.
+`voxels`, `widescreen`, `hrp`) fetches one.
 
 ## Layout
 
@@ -231,7 +234,7 @@ terminal `duke3d-packs` lists them and `duke3d-fetch <pack>` (`sc55`, `psx`,
 | `lib/catalog.ts`                                                                                   | Reads the games folder: each game's GRP, files and user maps, and what `duke3d-games` says of it.                                                                                                                                                     |
 | `lib/cover.ts`                                                                                     | Decodes a game's title screen out of its GRP, reading only the parts it needs, as a PNG.                                                                                                                                                              |
 | `bin/duke3d-fetch`                                                                                 | Fetches the free game into the games folder, or an add-on pack into the packs folder, checked against its SHA-256.                                                                                                                                    |
-| `bin/duke3d-packs`, `lib/packs.ts`                                                                 | The add-on packs the module offers, where each is fetched from, and which are fetched.                                                                                                                                                                |
+| `bin/duke3d-packs`, `lib/packs.ts`, `assets/packs/`                                                | The add-on packs the module offers, where each is fetched from, and which are fetched.                                                                                                                                                                |
 | `ui/duke3d/packs.tsx`                                                                              | Packs, the dialog ⋮ opens on a game's page: the packs, Fetch and Remove.                                                                                                                                                                              |
 | `engine/files/source/build/src/einlayer.cpp`                                                       | EDuke32's platform layer for the engine worker, in place of SDL's: WebGL 2 on the worker's canvas, the video modes, keys, characters, mouse and wheel, and the waits for its ticks.                                                                   |
 | `engine/files/source/audiolib/src/driver_ein.cpp`                                                  | The sound card: the mixer, the music in it, run as the worker asks for sound.                                                                                                                                                                         |

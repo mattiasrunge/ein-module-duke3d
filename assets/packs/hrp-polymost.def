@@ -1,0 +1,25 @@
+// The Duke Nukem 3D High Resolution Pack's Polymost edition (its duke3d_hrp_polymost.def), as the
+// module loads it: without its first-person weapons and its HUD and menu art, which the widescreen
+// fixes give for widescreen.
+include highres/textures_polymost.def
+include highres/skyboxes.def
+include highres/sprites/build.def
+include highres/sprites/characters_polymost.def
+include highres/sprites/decals_polymost.def
+include highres/sprites/effects_polymost.def
+include highres/sprites/jibs_polymost.def
+include highres/sprites/monsters_polymost.def
+include highres/sprites/pickups_polymost.def
+include highres/sprites/projectiles_polymost.def
+include highres/sprites/props_polymost.def
+include highres/sprites/signs_polymost.def
+include highres/sprites/switches_polymost.def
+include highres/sprites/ice_polymost.def
+include highres/screen/fonts.def
+tint { pal 1 red 100 green 120 blue 148 flags 1 }
+tint { pal 2 red 255 green  48 blue   0 flags 0 }
+tint { pal 4 red   0 green   0 blue   0 flags 0 }
+tint { pal 6 red 224 green 255 blue 112 flags 3 }
+tint { pal 7 red 172 green 157 blue 140 flags 0 }
+tint { pal 8 red 199 green 226 blue 113 flags 1 }
+include maphacks/maphacks_polymost.def

@@ -25,7 +25,8 @@ const AUTOLOAD = `${GAME_DIR}/autoload`;
  * together into `sound`; without it the game is silent. With `map`, one of the game's user maps, the
  * game starts on it, as `-map` on its command line does. The add-on packs fetched (`duke3d-packs`)
  * are read from EiN as the game asks too, each named on its command line with `-g`, in the order
- * they are listed, so a later one's files win, and its definitions files with `-mh`. `name`, the
+ * they are listed, so a later one's files win, and its definitions files with `-mh`, the module's
+ * own for it (`assets/packs/`) among them. `name`, the
  * player's account, names a player whose settings name no one yet (`-name`).
  */
 export async function startDuke(
@@ -35,6 +36,9 @@ export async function startDuke(
   const whole = await Promise.all(game.files.filter((name) => !LAZY.test(name)).map(async (name) => ({ path: at(name), data: await fetchFile(`${game.path}/${name}`) })));
   // A visitor by a share link reads no more than the game: no packs then.
   const packs = (await execCommand<Pack[]>('duke3d-packs').catch(() => [])).filter((pack) => pack.fetched);
+  const ownDefs = await Promise.all(
+    packs.flatMap((pack) => pack.assets ?? []).map(async (name) => ({ path: `${GAME_DIR}/${name}`, data: await fetchFile(`${ASSETS}/packs/${name}`) })),
+  );
   let shift = false;
   return await startWorkerGame<DukeStart>('duke3d', 'engine', {
     payload: {
@@ -46,7 +50,7 @@ export async function startDuke(
         '-gamegrp',
         game.grp.toLowerCase(),
         ...packs.flatMap((pack) => ['-g', `autoload/${pack.file}`]),
-        ...packs.flatMap((pack) => (pack.defs ?? []).flatMap((def) => ['-mh', def])),
+        ...packs.flatMap((pack) => [...pack.defs ?? [], ...pack.assets ?? []].flatMap((def) => ['-mh', def])),
         ...(name ? ['-name', name] : []),
         ...(map ? ['-map', `${map.toLowerCase()}.map`] : []),
       ],
@@ -55,7 +59,7 @@ export async function startDuke(
       ...game.files.filter((name) => LAZY.test(name)).map((name) => ({ path: at(name), url: fileUrl(`${game.path}/${name}`) })),
       ...packs.map((pack) => ({ path: `${AUTOLOAD}/${pack.file}`, url: fileUrl(`${PACKS}/${pack.file}`), size: pack.size })),
     ],
-    files: [...whole, ...kept.map((file) => ({ path: `${GAME_DIR}/${file.name}`, data: file.data }))],
+    files: [...whole, ...ownDefs, ...kept.map((file) => ({ path: `${GAME_DIR}/${file.name}`, data: file.data }))],
     controls: (post) => ({
       // Each key goes as the PC's scancode, and the character it types with it, for the console's
       // and the menus' fields.
