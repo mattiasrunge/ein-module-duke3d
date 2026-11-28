@@ -198,7 +198,9 @@ players have made for Duke Nukem 3D, with what each is, who made it and its size
   models, from the [Duke Nukem 3D High Resolution Pack](https://hrp.duke4.net)'s
   Polymost edition. Only its models are loaded: its hi-res textures and HUD
   weapons are left out, and so is its Polymer edition, which this build has no
-  renderer for. A game reads about 60 MB of it, and starts a few seconds later.
+  renderer for. A game reads about 60 MB of it, the first time in a browser,
+  which makes that start take longer; the browser keeps what was read for the
+  next starts.
 
 Nothing is fetched until someone chooses to: **Fetch** (an administrator's, as
 EiN lets only the administrator fetch from the internet) downloads a pack from

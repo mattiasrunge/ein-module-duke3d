@@ -72,7 +72,7 @@ export const KNOWN_PACKS: KnownPack[] = [
     id: 'hrp-models',
     title: 'HRP models',
     about:
-      "The enemies, Duke and the other characters as 3D models in place of flat sprites, from the Duke Nukem 3D High Resolution Pack's Polymost edition, by its team. A 1 GB download, of which a game reads about 60 MB; a game takes a few seconds more to start.",
+      "The enemies, Duke and the other characters as 3D models in place of flat sprites, from the Duke Nukem 3D High Resolution Pack's Polymost edition, by its team. A 1 GB download, of which a game reads about 60 MB, the first time in a browser: that start takes longer, the next ones read it from the browser.",
     file: 'duke3d_hrp-r750.zip',
     url: 'https://www.duke4.org/files/nightfright/hrp/duke3d_hrp-r750.zip',
     sha256: 'e1fca8bec182006a8ef683e5da204e54e6dbc2575d6510e9738825adcb270b04',
