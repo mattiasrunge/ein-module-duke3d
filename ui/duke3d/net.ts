@@ -14,8 +14,12 @@
  * The netcode is called at the game's yield points, as it was from the browser's events: `step`
  * runs between ticks, reads what came and answers the transport's word there, and `poll`, the
  * netcode's own `net_poll`, hands it the frames and the players who came and went, in order.
+ *
+ * The games hosted of the game, the games module's lobby, are the game's Join a Game list
+ * (Multiplayer in its menus): a row joins one, as the page's Join does, and Leave Game leaves it.
  */
-import type { EngineNetwork } from '@games/engine';
+import type { ServerInfo } from '@games/api';
+import type { EngineLobby, EngineNetwork } from '@games/engine';
 import { addressNumber, type RelayRoster } from '@games/net';
 
 /** The port the game's datagrams go to and from, Duke Nukem 3D's own. */
@@ -79,6 +83,8 @@ export type NetModule = {
   _Net_SetSpawnTable(at: number): void;
   _Net_GetBotMask(): number;
   _NetMenu_SetStatus(at: number): void;
+  _NetMenu_SetLobby(at: number): void;
+  _NetMenu_SetRoster(at: number): void;
   _NetMenu_OnJoined(slot: number): void;
   _ein_board(at: number): void;
 };
@@ -94,10 +100,20 @@ function message(kind: number, body: Uint8Array): Uint8Array {
   return whole;
 }
 
+/** The game types' names, as Join a Game shows them, by the drop-in's values. */
+const MODE_NAMES: Record<string, string> = {
+  dukematch: 'DukeMatch',
+  coop: 'Co-op',
+  'dukematch-nospawn': 'DukeMatch',
+  team: 'Team DukeMatch',
+  lms: 'Last Man Standing',
+};
+
 /**
  * The game's wire, `Module.einDuke`, which `ein-library.js` hands the netcode's sends to and its
  * polls, and which the game's menus call (`menus.cpp`): `launch`, as the menu comes up,
- * `sendSnapshot` for a late joiner, and `leave`.
+ * `sendSnapshot` for a late joiner, `leave`; and `lobby`, `playing`, `joinRow` and `quit` for
+ * Multiplayer.
  */
 export class DukeLink {
   /** Whether this player hosts, is a guest, or neither yet: the next step decides by the relay's roster. */
@@ -118,15 +134,57 @@ export class DukeLink {
   readonly #parts = new Map<number, Uint8Array[]>();
   /** What the host said of the snapshot that follows. */
   #snapshot?: Extract<Control, { t: 'snapshot' }>;
+  /** The hosted game played in, from the start or as Join a Game joined it. */
+  #server?: ServerInfo;
+  /** The games hosted Join a Game lists, by their rows, as last told to the game; the roster told. */
+  #rows: string[] = [];
+  #offered?: ServerInfo[];
+  #told?: RelayRoster;
 
   constructor(
     private readonly duke: NetModule,
     private readonly network: EngineNetwork,
-    private readonly hosted: Hosted,
+    private readonly hostedGames: EngineLobby | undefined,
+    private readonly hostedOf: (server: ServerInfo) => Hosted,
+    server: ServerInfo | undefined,
     private readonly name: string | undefined,
     private readonly log: (line: string) => void,
   ) {
     network.open(PORT);
+    this.#server = hostedGames?.joined ?? server;
+    hostedGames?.onJoined((joined, failed) => {
+      if (joined) this.#server = joined;
+      if (failed) {
+        this.log(`net: not joined: ${failed}`);
+        this.#status(`!${failed}`);
+      }
+    });
+  }
+
+  /** Whether the page offers games hosted to join: Multiplayer is in the game's menus then. */
+  lobby(): boolean {
+    return !!this.hostedGames;
+  }
+
+  /** Whether the game plays in a hosted game now. */
+  playing(): boolean {
+    return !!this.network.relay;
+  }
+
+  /** Join a Game's row `row`: play in that hosted game (`menus.cpp` has left any played in first). */
+  joinRow(row: number): void {
+    const id = this.#rows[row];
+    if (!id || !this.hostedGames) return;
+    this.log(`net: joining ${id}`);
+    this.hostedGames.join(id);
+  }
+
+  /** Leave Game: the game has ended its session; the hosted game is left. */
+  quit(): void {
+    this.log('net: leaving the game');
+    this.#reset();
+    this.#server = undefined;
+    this.hostedGames?.leave();
   }
 
   /**
@@ -134,9 +192,11 @@ export class DukeLink {
    * game's menu must be up (`ready`) before a player hosts or joins, so the netcode has its players.
    */
   step(ready: boolean): void {
+    this.#offer();
     const roster = this.network.relay;
     if (!roster) return;
     this.#follow(roster, ready);
+    this.#tellRoster(roster);
     for (let datagram = this.network.recv(PORT); datagram; datagram = this.network.recv(PORT)) this.#heard(datagram.ip, datagram.data);
     if (this.#role === 'guest' && !this.#joined && this.#host !== undefined && performance.now() - this.#asked >= ASK_MS) {
       this.#asked = performance.now();
@@ -247,13 +307,15 @@ export class DukeLink {
       else this.#host = host;
       return;
     }
-    if (!ready) return;
-    if (this.hosted.file) this.#board(this.hosted.file);
+    const server = this.#server;
+    if (!ready || !server) return;
+    const hosted = this.hostedOf(server);
+    if (hosted.file) this.#board(hosted.file);
     if (host === self) {
       this.log('net: hosting');
       this.#role = 'host';
       this.duke._Net_SetLocalIndex(0);
-      this.#launch = this.hosted;
+      this.#launch = hosted;
     } else {
       this.log('net: joining the host');
       this.#role = 'guest';
@@ -331,9 +393,10 @@ export class DukeLink {
     const seated = this.#slots.get(address);
     if (seated !== undefined) return this.#tell(address, { t: 'joined', slot: seated });
     const bots = this.duke._Net_GetBotMask();
+    const most = Math.min(this.#server?.maxPlayers ?? MAX_SLOTS, MAX_SLOTS);
     let slot = 1;
-    while (slot < Math.min(this.hosted.maxPlayers, MAX_SLOTS) && (this.#addresses.has(slot) || bots & (1 << slot))) slot++;
-    if (slot >= Math.min(this.hosted.maxPlayers, MAX_SLOTS)) return this.#tell(address, { t: 'refused', reason: 'The game is full' });
+    while (slot < most && (this.#addresses.has(slot) || bots & (1 << slot))) slot++;
+    if (slot >= most) return this.#tell(address, { t: 'refused', reason: 'The game is full' });
     this.log(`net: ${name ?? 'a player'} joins at slot ${slot}`);
     this.#addresses.set(slot, address);
     this.#slots.set(address, slot);
@@ -398,6 +461,36 @@ export class DukeLink {
     this.#slots.clear();
     this.#parts.clear();
     this.#inbound.length = 0;
+  }
+
+  /** Join a Game's rows, when the games hosted changed: who hosted each, its level and game type, how many play of how many may. */
+  #offer(): void {
+    const servers = this.hostedGames?.servers;
+    if (!servers || servers === this.#offered) return;
+    this.#offered = servers;
+    this.#rows = servers.map((server) => server.id);
+    const rows = servers.map((server) => ({
+      name: `${server.startedBy}: ${server.map} ${MODE_NAMES[server.mode] ?? server.mode}`.toUpperCase().slice(0, 31),
+      players: server.players.length,
+      maxPlayers: server.maxPlayers,
+      ping: -1,
+      grpState: 'have',
+    }));
+    this.#call(this.duke._NetMenu_SetLobby, JSON.stringify(rows));
+  }
+
+  /** Who plays, for the menus' lobby, by the seats they play from, when that changed. */
+  #tellRoster(roster: RelayRoster): void {
+    if (roster === this.#told) return;
+    this.#told = roster;
+    this.#call(this.duke._NetMenu_SetRoster, JSON.stringify(roster.players.map((player) => ({ name: player.seat.toUpperCase(), connected: true, ping: -1 }))));
+  }
+
+  /** Call one of the game's functions that takes a string. */
+  #call(call: (at: number) => void, text: string): void {
+    const at = this.duke.stringToNewUTF8(text);
+    call(at);
+    this.duke._free(at);
   }
 
   /** The user map the hosted game is played on, for the netcode's User Map level. */

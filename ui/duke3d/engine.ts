@@ -2,11 +2,8 @@ import { fileUrl } from '@ein/ui/lib';
 import { execCommand } from '@ein/ui/signals';
 import type { RunningGame, StartOptions } from '@games/adapter';
 import { fetchFile, startWorkerGame } from '@games/worker';
-import type { ServerInfo } from '@games/api';
 import type { InstalledGame, Pack } from '../../lib/api.ts';
-import { MODES } from '../../lib/games.ts';
 import { character, scancode } from './keys.ts';
-import type { Hosted } from './net.ts';
 import { type DukeStart, GAME_DIR } from './start.ts';
 
 /** Where the module's built engine sits in EiN's tree. */
@@ -19,17 +16,6 @@ const LAZY = /\.grp$/i;
 const PACKS = '/groups/users/duke3d/.packs';
 const AUTOLOAD = `${GAME_DIR}/autoload`;
 
-/** The user map's level: Duke's User Map, volume 1, level 8, which plays `boardfilename`. */
-const USER_MAP = { volume: 0, level: 7 };
-
-/** The hosted game `server` of `game`, as its host's engine starts it: on one of the game's levels, or on a user map. */
-function hostedOf(game: InstalledGame, server: ServerInfo): Hosted {
-  const map = server.map.toLowerCase();
-  const level = game.levels?.find((level) => level.map === map);
-  const at = level ?? { ...USER_MAP, file: `${map}.map` };
-  return { ...at, mode: MODES[server.mode] ?? 0, maxPlayers: server.maxPlayers };
-}
-
 /**
  * Start `game` in the module's engine worker (`engine-worker.ts`). Its files are in the game's
  * directory, by the lower-case names the game opens them by, whatever they are called here: its GRPs
@@ -39,16 +25,17 @@ function hostedOf(game: InstalledGame, server: ServerInfo): Hosted {
  * together into `sound`; without it the game is silent. With `map`, one of the game's levels or its
  * user maps, the game starts on it: a level as New Game starts it, once the game's menu is up, which
  * the shareware episode allows where it refuses `-map`; a user map with `-map` on its command line.
- * With `online`, the hosted game it joins, it plays that together (`net.ts`). The add-on packs fetched (`duke3d-packs`)
+ * With `online`, the hosted game it joins, it plays that together (`net.ts`), and with `lobby` its
+ * Multiplayer menu joins the games hosted of it while it runs. The add-on packs fetched (`duke3d-packs`)
  * are read from EiN as the game asks too, each named on its command line with `-g`, in the order
  * they are listed, so a later one's files win, and its definitions files with `-mh`, the module's
  * own for it (`assets/packs/`) among them. `name`, the
- * player's account, names a player whose settings name no one yet (`-name`).
+ * player's account, names a player whose settings name no one yet (`-name`); Visitor without one.
  */
 export async function startDuke(
-  { game, kept, map, name, online, sound, log, onKeep, onProgress }: Pick<
+  { game, kept, map, name, online, lobby, sound, log, onKeep, onProgress }: Pick<
     StartOptions<InstalledGame>,
-    'game' | 'kept' | 'map' | 'name' | 'online' | 'sound' | 'log' | 'onKeep' | 'onProgress'
+    'game' | 'kept' | 'map' | 'name' | 'online' | 'lobby' | 'sound' | 'log' | 'onKeep' | 'onProgress'
   >,
 ): Promise<RunningGame> {
   const level = map === undefined ? undefined : game.levels?.find((level) => level.map === map.toLowerCase());
@@ -71,11 +58,14 @@ export async function startDuke(
         game.grp.toLowerCase(),
         ...packs.flatMap((pack) => ['-g', `autoload/${pack.file}`]),
         ...packs.flatMap((pack) => [...pack.defs ?? [], ...pack.assets ?? []].flatMap((def) => ['-mh', def])),
-        ...(name ? ['-name', name] : []),
+        // Someone without an account, by a share link, is Visitor until they choose a name.
+        '-name',
+        name ?? 'Visitor',
         // A hosted game and a level skip the logos: they start at the menu.
         ...(online || level ? ['-nologo'] : map ? ['-map', `${map.toLowerCase()}.map`] : []),
       ],
-      ...(online ? { online: hostedOf(game, online.server), ...(name ? { name } : {}) } : level ? { level: { volume: level.volume, level: level.level } } : {}),
+      ...(online ? { server: online.server } : level ? { level: { volume: level.volume, level: level.level } } : {}),
+      ...(online || lobby ? { levels: game.levels ?? [], ...(name ? { name } : {}) } : {}),
     },
     lazy: [
       ...game.files.filter((name) => LAZY.test(name)).map((name) => ({ path: at(name), url: fileUrl(`${game.path}/${name}`) })),
@@ -102,5 +92,5 @@ export async function startDuke(
       },
       wheel: (up) => post({ type: 'input', data: { wheel: up } }),
     }),
-  }, { sound, log, onKeep, onProgress, ...(online ? { online } : {}) });
+  }, { sound, log, onKeep, onProgress, ...(online ? { online } : {}), ...(lobby ? { lobby } : {}) });
 }

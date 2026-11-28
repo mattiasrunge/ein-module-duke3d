@@ -104,7 +104,11 @@ name in **Options → Player Setup**, you play under your account's.
 of its levels or user maps, in one of Duke's game types (DukeMatch, Cooperative,
 DukeMatch without items coming back, Team DukeMatch, Last Man Standing), for up
 to eight players. Everyone who has the game, and anyone with a share link to it,
-then sees **Join** at the foot of its frame. No game runs on the server: the
+then sees **Join** at the foot of its frame, and can join from inside the game
+too: **Multiplayer** in its menu (Escape) has **Join a Game**, the games hosted
+of it with who hosted each, its level and game type and how many play, and,
+while you play in one, **Leave Game**, back to the menu to play alone; the host
+also has **Change Map**. No game runs on the server: the
 games module's `games-relay` service passes the players' moves between them, as
 Duke's own network games played, each player's game in step with the others'
 (EDuke32's NetDuke32 netcode, as eduke32-wasm ports it).
@@ -116,6 +120,14 @@ of everyone's game; when the host leaves, the others are back at the menu for a
 moment, and whoever has been in the game longest starts the level again, which
 the rest join. The names on the scoreboard are the players' own, their accounts'
 until they choose one. **Stop server** ends it for everyone.
+
+**⋮** > **Share** on a game's page makes a link to the game that you send to
+someone without an account here: they open it in their browser and play the
+game, alone or in a game hosted of it, joined at the frame's foot or from
+**Multiplayer**, as Visitor until they choose a name in **Options → Player
+Setup**. Nothing of theirs is kept. It is the games module's share link (its
+documentation has the rest); `duke3d-games <folder>` lists the game in that
+folder alone, which is all they read.
 
 Everyone in a game plays the same game folder, so the same GRP, maps and CON
 files. The packs are the installation's, the same for everyone signed in; a

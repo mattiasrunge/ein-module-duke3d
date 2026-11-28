@@ -10,7 +10,7 @@
  */
 import { type EmscriptenFS, type EmscriptenModule, type Engine, exitStatus, FrameCanvas, heapSound, serveEngine, startEmscripten } from '@games/engine';
 import { DukeLink, type NetModule } from './net.ts';
-import { type DukeStart, GAME_DIR } from './start.ts';
+import { type DukeStart, GAME_DIR, hostedOf } from './start.ts';
 
 /** What the engine's platform layer exports (`engine/`), beside Emscripten's own. */
 type DukeModule = EmscriptenModule & NetModule & {
@@ -104,12 +104,15 @@ const engine: Engine<DukeStart> = {
       duke._ein_audio_rate(boot.sampleRate);
       sound = heapSound(duke, (at, count) => duke._ein_audio_render(at, count));
     }
-    // A hosted game is played through the relay, the netcode's wire (net.ts); a level chosen to play
-    // alone the game starts as its menu comes up (menus.cpp, ein_launch).
-    if (boot.payload.online && boot.network?.relay) {
-      link = new DukeLink(duke, boot.network, boot.payload.online, boot.payload.name, boot.log);
+    // A hosted game is played through the relay, the netcode's wire (net.ts), joined from the start
+    // or from the game's Multiplayer menu; a level chosen to play alone the game starts as its menu
+    // comes up (menus.cpp, ein_launch).
+    const { levels = [], server, name, level } = boot.payload;
+    if (boot.network && (boot.lobby || boot.network.relay)) {
+      link = new DukeLink(duke, boot.network, boot.lobby, (hosted) => hostedOf(levels, hosted), server, name, boot.log);
       duke.einDuke = link;
-    } else if (boot.payload.level) duke.einLevel = boot.payload.level;
+    }
+    if (level) duke.einLevel = level;
     // main runs until the game first waits for a tick.
     try {
       duke.callMain(boot.payload.args);

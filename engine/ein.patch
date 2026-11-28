@@ -2001,28 +2001,10 @@ index e052e0e..f0d7029 100644
              auto const grptype = FindGrpInfo(crcval, st.st_size);
  
 diff --git a/source/duke3d/src/menus.cpp b/source/duke3d/src/menus.cpp
-index 1bc19f6..5e63432 100644
+index 1bc19f6..6668a51 100644
 --- a/source/duke3d/src/menus.cpp
 +++ b/source/duke3d/src/menus.cpp
-@@ -401,7 +401,7 @@ MAKE_MENU_TOP_ENTRYLINK( "Multiplayer", MEF_MainMenu, MAIN_MULTIPLAYER, MENU_NET
- static MenuEntry_t *MEL_MAIN[] = {
-     &ME_MAIN_NEWGAME,
-     &ME_MAIN_LOADGAME,
--#ifdef NETMENU
-+#if defined NETMENU && !defined EDUKE32_EIN
-     &ME_MAIN_MULTIPLAYER,
- #endif
-     &ME_MAIN_OPTIONS,
-@@ -420,7 +420,7 @@ static MenuEntry_t *MEL_MAIN_INGAME[] = {
- #endif
-     &ME_MAIN_SAVEGAME,
-     &ME_MAIN_LOADGAME,
--#ifdef NETMENU
-+#if defined NETMENU && !defined EDUKE32_EIN
-     &ME_MAIN_MULTIPLAYER,   // reachable from ESC in-game too (live request)
- #endif
-     &ME_MAIN_OPTIONS,
-@@ -1617,6 +1617,31 @@ static void netmenu_js_quote(char *dst, int dstsize, const char *src)
+@@ -1617,6 +1617,45 @@ static void netmenu_js_quote(char *dst, int dstsize, const char *src)
      dst[j] = 0;
  }
  
@@ -2049,12 +2031,57 @@ index 1bc19f6..5e63432 100644
 +EM_JS(void, ein_net_send_snapshot, (int seatMask, int slot, int plc, int isJoin), {
 +    if (Module.einDuke) Module.einDuke.sendSnapshot(seatMask, slot, plc, isJoin);
 +});
++// The games hosted the page offers to join (Join a Game), and whether the game
++// plays in one now; join the one at a row of the list, or leave the one played in.
++EM_JS(int, ein_net_lobby, (void), {
++    return Module.einDuke && Module.einDuke.lobby() ? 1 : 0;
++});
++EM_JS(int, ein_net_playing, (void), {
++    return Module.einDuke && Module.einDuke.playing() ? 1 : 0;
++});
++EM_JS(void, ein_net_join_row, (int row), {
++    if (Module.einDuke) Module.einDuke.joinRow(row);
++});
++EM_JS(void, ein_net_quit, (void), {
++    if (Module.einDuke) Module.einDuke.quit();
++});
 +#endif
 +
  // --- action bridge (C -> transport) ----------------------------------------
  // Browser: run_script into window.NetMenu (the JS transport). Native: call the
  // C++ transport API directly (net_transport_native.cpp), which drives the same
-@@ -1649,7 +1674,8 @@ static void netmenu_host(void)
+@@ -1637,6 +1676,30 @@ extern "C" {
+ }
+ #endif
+ 
++#ifdef EDUKE32_EIN
++extern "C" void NetMenu_SetStatus(const char *s);
++
++// Leave the hosted game played in: the transport lets go of it, the netcode's
++// session ends here as it ends when the host has gone, and the game is back at
++// its main menu, played alone.
++static void netmenu_ein_leave_game(void)
++{
++    ein_net_quit();
++    s_netHosting = 0;
++    s_netMyConnectIndex = 0;
++    Net_SetLocalBot(0);
++    NetMenu_SetInGame(0);
++    Net_ClearFIFO();
++    for (int k = 0; k < MAXPLAYERS; k++)
++        g_player[k].connected = 0;
++    g_player[0].connected = 1;
++    myconnectindex = screenpeek = 0;
++    Net_SeatLateJoiners();
++    ud.multimode = g_mostConcurrentPlayers = 1;
++    G_BackToMenu();
++}
++#endif
++
+ static void netmenu_host(void)
+ {
+     // A new transport match starts with human ownership. Localbot is a
+@@ -1649,7 +1712,8 @@ static void netmenu_host(void)
      else
          ud.m_dmflags |= DMFLAG_NOAUTOAIM;
      LOG_F(INFO, "[aim] match autoaim: %s", s_netAutoAim ? "allowed" : "forced off");
@@ -2064,18 +2091,25 @@ index 1bc19f6..5e63432 100644
      char name[80], player[80], script[256];
      netmenu_js_quote(name, sizeof name, s_netMatchName);
      netmenu_js_quote(player, sizeof player, szPlayerName);
-@@ -1668,7 +1694,9 @@ static void netmenu_host(void)
+@@ -1668,7 +1732,16 @@ static void netmenu_host(void)
  static void netmenu_join_row(int idx)
  {
      Net_SetLocalBot(0);
 -#ifdef __EMSCRIPTEN__
 +#if defined EDUKE32_EIN
-+    (void)idx;
++    // A hosted game played in is left first, and a game played alone ends: the
++    // one joined starts from the menu, on the host's level as it stands.
++    if (ein_net_playing())
++        netmenu_ein_leave_game();
++    else if (g_player[myconnectindex].ps->gm & MODE_GAME)
++        G_BackToMenu();
++    NetMenu_SetStatus("Joining the game");
++    ein_net_join_row(idx);
 +#elif defined __EMSCRIPTEN__
      char player[80], script[160];
      netmenu_js_quote(player, sizeof player, szPlayerName);
      Bsnprintf(script, sizeof script, "window.NetMenu&&window.NetMenu.joinRow(%d,%s)", idx, player);
-@@ -1680,7 +1708,8 @@ static void netmenu_join_row(int idx)
+@@ -1680,7 +1753,8 @@ static void netmenu_join_row(int idx)
  static void netmenu_join_code(void)
  {
      Net_SetLocalBot(0);
@@ -2085,7 +2119,7 @@ index 1bc19f6..5e63432 100644
      // Static: a full invite is ~500 chars and js_quote can double it; the old
      // code[176]/script[320] silently truncated every real invite into "invalid code".
      static char code[2112], script[2304];
-@@ -1695,7 +1724,7 @@ static void netmenu_join_code(void)
+@@ -1695,7 +1769,7 @@ static void netmenu_join_code(void)
  }
  static void netmenu_set_ping(int idx)
  {
@@ -2094,7 +2128,7 @@ index 1bc19f6..5e63432 100644
      char s[96]; Bsnprintf(s, sizeof s, "window.NetMenu&&window.NetMenu.setPing(%d)", idx); emscripten_run_script(s);
  #else
      (void)idx;
-@@ -1703,7 +1732,7 @@ static void netmenu_set_ping(int idx)
+@@ -1703,7 +1777,7 @@ static void netmenu_set_ping(int idx)
  }
  static void netmenu_set_share(int shareOn)
  {
@@ -2103,7 +2137,7 @@ index 1bc19f6..5e63432 100644
      char s[96]; Bsnprintf(s, sizeof s, "window.NetMenu&&window.NetMenu.setAllowDl(%d)", shareOn ? 0 : 1); emscripten_run_script(s);
  #else
      (void)shareOn;   // native GRP sharing not wired yet
-@@ -1711,7 +1740,9 @@ static void netmenu_set_share(int shareOn)
+@@ -1711,7 +1785,9 @@ static void netmenu_set_share(int shareOn)
  }
  static void netmenu_browse(int start)
  {
@@ -2114,7 +2148,7 @@ index 1bc19f6..5e63432 100644
      emscripten_run_script(start ? "window.NetMenu&&window.NetMenu.startBrowse()" : "window.NetMenu&&window.NetMenu.stopBrowse()");
  #else
      net_native_browse(start);
-@@ -1721,7 +1752,9 @@ static void netmenu_leave(void)
+@@ -1721,7 +1797,9 @@ static void netmenu_leave(void)
  {
      s_netHosting = 0;
      Net_SetLocalBot(0);
@@ -2125,7 +2159,7 @@ index 1bc19f6..5e63432 100644
      emscripten_run_script("window.NetMenu&&window.NetMenu.leave()");
  #else
      net_native_leave();
-@@ -1729,7 +1762,9 @@ static void netmenu_leave(void)
+@@ -1729,7 +1807,9 @@ static void netmenu_leave(void)
  }
  static void netmenu_pull_grp_labels(void)
  {
@@ -2136,7 +2170,7 @@ index 1bc19f6..5e63432 100644
      const char *s = emscripten_run_script_string(
          "(function(){try{var g=window.DukeNet&&DukeNet.getLocalGrp();return g&&g.labels?g.labels.join(', '):'';}catch(e){return '';}})()");
      netmenu_clamp(s_netGrpLabels, sizeof s_netGrpLabels, s);
-@@ -1804,7 +1839,9 @@ extern "C" void Web_MuteCfgGuard(int preWrite)
+@@ -1804,7 +1884,9 @@ extern "C" void Web_MuteCfgGuard(int preWrite)
  
  extern "C" void NetMenu_SetInGame(int in_game)
  {
@@ -2147,7 +2181,7 @@ index 1bc19f6..5e63432 100644
      emscripten_run_script(in_game ? "window.DukeNet&&window.DukeNet.setInGame(true)"
                                    : "window.DukeNet&&window.DukeNet.setInGame(false)");
  #else
-@@ -1817,7 +1854,9 @@ extern "C" void NetMenu_SetInGame(int in_game)
+@@ -1817,7 +1899,9 @@ extern "C" void NetMenu_SetInGame(int in_game)
  // Legacy RESYNC broadcast: every veteran reloads and rendezvouses (mode 0).
  static void netmenu_send_snapshot(int seatMask)
  {
@@ -2158,7 +2192,7 @@ index 1bc19f6..5e63432 100644
      char scr[160];
      Bsnprintf(scr, sizeof scr,
                "window.DukeNet&&window.DukeNet.sendSnapshot&&window.DukeNet.sendSnapshot(%d,-1,0,0)", seatMask);
-@@ -1832,7 +1871,9 @@ static void netmenu_send_snapshot(int seatMask)
+@@ -1832,7 +1916,9 @@ static void netmenu_send_snapshot(int seatMask)
  // anything. Called from the oldnet.cpp join state machine.
  void netmenu_send_snapshot_to(int seatMask, int slot, int plc, int isJoin)
  {
@@ -2169,7 +2203,148 @@ index 1bc19f6..5e63432 100644
      char scr[192];
      Bsnprintf(scr, sizeof scr,
                "window.DukeNet&&window.DukeNet.sendSnapshot&&window.DukeNet.sendSnapshot(%d,%d,%d,%d)",
-@@ -9316,7 +9357,7 @@ void M_DisplayMenus(void)
+@@ -1952,16 +2038,30 @@ static MenuEntry_t ME_NET_ROOT_HOSTPUB  = MAKE_MENUENTRY( "Host Public Game",
+ static MenuLink_t MEO_NET_ROOT_HOSTPRIV = { MENU_NET_HOSTCFG,  MA_Advance, };
+ static MenuEntry_t ME_NET_ROOT_HOSTPRIV = MAKE_MENUENTRY( "Host Private Game",  &MF_Redfont, &MEF_CenterMenu, &MEO_NET_ROOT_HOSTPRIV, Link );
+ static MenuLink_t MEO_NET_ROOT_BROWSE   = { MENU_NET_BROWSE,   MA_Advance, };
++#ifdef EDUKE32_EIN
++static MenuEntry_t ME_NET_ROOT_BROWSE   = MAKE_MENUENTRY( "Join a Game",        &MF_Redfont, &MEF_CenterMenu, &MEO_NET_ROOT_BROWSE,   Link );
++// EiN: leave the hosted game played in, back to the main menu, playing alone.
++static MenuLink_t MEO_NET_ROOT_LEAVE    = { MENU_NULL,         MA_None, };
++static MenuEntry_t ME_NET_ROOT_LEAVE    = MAKE_MENUENTRY( "Leave Game",         &MF_Redfont, &MEF_CenterMenu, &MEO_NET_ROOT_LEAVE,    Link );
++#else
+ static MenuEntry_t ME_NET_ROOT_BROWSE   = MAKE_MENUENTRY( "Browse Public Games",&MF_Redfont, &MEF_CenterMenu, &MEO_NET_ROOT_BROWSE,   Link );
++#endif
+ static MenuLink_t MEO_NET_ROOT_JOIN     = { MENU_NET_JOINCODE, MA_Advance, };
+ static MenuEntry_t ME_NET_ROOT_JOIN     = MAKE_MENUENTRY( "Join by Code",       &MF_Redfont, &MEF_CenterMenu, &MEO_NET_ROOT_JOIN,     Link );
+ static MenuLink_t MEO_NET_ROOT_BACK     = { MENU_PREVIOUS,     MA_Return, };
+ static MenuEntry_t ME_NET_ROOT_BACK     = MAKE_MENUENTRY( "Back",               &MF_Redfont, &MEF_CenterMenu, &MEO_NET_ROOT_BACK,     Link );
+ static MenuLink_t MEO_NET_ROOT_CHANGEMAP = { MENU_NET_CHANGEMAP, MA_Advance, };
+ static MenuEntry_t ME_NET_ROOT_CHANGEMAP = MAKE_MENUENTRY( "Change Map", &MF_Redfont, &MEF_CenterMenu, &MEO_NET_ROOT_CHANGEMAP, Link );
++#ifdef EDUKE32_EIN
++// EiN hosts on the Games page: its Multiplayer joins the games hosted there, and leaves one.
++static MenuEntry_t *MEL_NETWORK_ND[] = {
++    &ME_NET_ROOT_BROWSE, &ME_NET_ROOT_CHANGEMAP, &ME_NET_ROOT_LEAVE, &ME_NET_ROOT_BACK,
++};
++#else
+ static MenuEntry_t *MEL_NETWORK_ND[] = {
+     &ME_NET_ROOT_CHANGEMAP, &ME_NET_ROOT_HOSTPUB, &ME_NET_ROOT_HOSTPRIV, &ME_NET_ROOT_BROWSE, &ME_NET_ROOT_JOIN, &ME_NET_ROOT_BACK,
+ };
++#endif
+ 
+ // HOST CONFIG
+ static MenuString_t MEO_NET_CFG_NAME = MAKE_MENUSTRING( s_netMatchName, &MF_Bluefont, NET_NAME_MAX, 0 );
+@@ -2075,7 +2175,11 @@ static MenuEntry_t ME_NET_MAXPING = MAKE_MENUENTRY( "Max Ping", &MF_Redfont, &ME
+ static MenuLink_t MEO_NET_BROWSE_ROW = { MENU_NULL, MA_None, }; // activation handled manually; no auto-advance
+ static MenuEntry_t ME_NET_BROWSE_ROW_TEMPLATE = MAKE_MENUENTRY( NULL, &MF_Minifont, &MEF_NetBrowseRow, &MEO_NET_BROWSE_ROW, Link );
+ static MenuEntry_t ME_NET_BROWSE_ROW[NET_BROWSE_MAX];
++#ifdef EDUKE32_EIN
++static MenuEntry_t ME_NET_BROWSE_EMPTY = MAKE_MENUENTRY( "No game is hosted: Start server on the game's page", &MF_Minifont, &MEF_NetBrowseRow, &MEO_NULL, Dummy );
++#else
+ static MenuEntry_t ME_NET_BROWSE_EMPTY = MAKE_MENUENTRY( "Searching for games...", &MF_Minifont, &MEF_NetBrowseRow, &MEO_NULL, Dummy );
++#endif
+ static MenuEntry_t *MEL_NET_BROWSE[1 + NET_BROWSE_MAX]; // [0]=Max Ping, [1..]=rows; built at runtime
+ 
+ // JOIN BY CODE
+@@ -2155,7 +2259,11 @@ static MenuMenu_t M_NETOPTIONS = MAKE_MENUMENU( "Net Game Options", &MMF_NetSetu
+ static MenuMenu_t M_NETJOIN = MAKE_MENUMENU( "Join Network Game", &MMF_SmallOptionsNarrow, MEL_NETJOIN );
+ #ifdef NETMENU
+ static MenuMenu_t M_NET_HOSTCFG  = MAKE_MENUMENU( "Host Game", &MMF_SmallOptions, MEL_NET_HOSTCFG );
++#ifdef EDUKE32_EIN
++static MenuMenu_t M_NET_BROWSE   = MAKE_MENUMENU_CUSTOMSIZE( "Join a Game", &MMF_NetBrowse, MEL_NET_BROWSE );
++#else
+ static MenuMenu_t M_NET_BROWSE   = MAKE_MENUMENU_CUSTOMSIZE( "Browse Public Games", &MMF_NetBrowse, MEL_NET_BROWSE );
++#endif
+ static MenuMenu_t M_NET_JOINCODE = MAKE_MENUMENU( "Join by Code", &MMF_SmallOptions, MEL_NET_JOINCODE );
+ static MenuMenu_t M_NET_LOBBY    = MAKE_MENUMENU( "Multiplayer Lobby", &MMF_SmallOptions, MEL_NET_LOBBY );
+ static MenuMenu_t M_NET_CHANGEMAP = MAKE_MENUMENU( "Change Map", &MMF_SmallOptions, MEL_NET_CHANGEMAP );
+@@ -2397,6 +2505,10 @@ static void netmenu_rebuild_browse(void)
+     }
+ 
+     MEL_NET_BROWSE[0] = &ME_NET_MAXPING;
++#ifdef EDUKE32_EIN
++    // Every game hosted here is as near as EiN: no ping to choose by.
++    ME_NET_MAXPING.flags |= MEF_Hidden;
++#endif
+     int n = 0;
+     for (int i = 0; i < s_netLobbyCount && i < NET_BROWSE_MAX; ++i)
+     {
+@@ -2413,6 +2525,10 @@ static void netmenu_rebuild_browse(void)
+     M_NET_BROWSE.numEntries = 1 + n;
+     if (M_NET_BROWSE.currentEntry >= M_NET_BROWSE.numEntries)
+         M_NET_BROWSE.currentEntry = 0;
++#ifdef EDUKE32_EIN
++    if (M_NET_BROWSE.currentEntry == 0)
++        M_NET_BROWSE.currentEntry = 1;
++#endif
+ }
+ 
+ static sjson_context *netmenu_json(void)
+@@ -3380,6 +3496,11 @@ static void Menu_Pre(MenuID_t cm)
+         MenuEntry_DisableOnCondition(&ME_MAIN_QUITTOTITLE, g_netServer || numplayers > 1);
+         fallthrough__;
+     case MENU_MAIN:
++#ifdef EDUKE32_EIN
++        // Multiplayer, where the page offers games hosted to join: for an account,
++        // in a game that can be hosted.
++        MenuEntry_HideOnCondition(&ME_MAIN_MULTIPLAYER, !ein_net_lobby());
++#endif
+         if ((g_netServer || ud.multimode > 1) && ud.recstat != 2)
+         {
+             ME_MAIN_NEWGAME.entry = &MEO_MAIN_NEWGAME_NETWORK;
+@@ -3613,6 +3734,9 @@ static void Menu_Pre(MenuID_t cm)
+             !s_netHosting || s_netMyConnectIndex != 0
+             || g_player[myconnectindex].ps == NULL
+             || !(g_player[myconnectindex].ps->gm & MODE_GAME));
++#ifdef EDUKE32_EIN
++        MenuEntry_HideOnCondition(&ME_NET_ROOT_LEAVE, !ein_net_playing());
++#endif
+         break;
+     case MENU_NET_HOSTCFG:
+     case MENU_NET_CHANGEMAP:
+@@ -3947,6 +4071,15 @@ static void Menu_PreDraw(MenuID_t cm, MenuEntry_t* entry, const vec2_t origin)
+             netlobbyrow_t & r = s_netLobby[i];
+             int const paid = (r.grpState == 2);
+             int const namepal = paid ? MF_Minifont.pal_disabled : (i == cur) ? MF_Minifont.pal_selected : MF_Minifont.pal_deselected;
++#ifdef EDUKE32_EIN
++            // EiN: who hosted it, its level and game type, and how many play of how many may.
++            char title[NET_NAME_MAX];
++            Bstrncpyz(title, r.name, sizeof title);
++            mminitext(origin.x + (MENU_MARGIN_REGULAR<<16), y, title, namepal);
++            Bsnprintf(tempbuf, sizeof tempbuf, "%d/%d", r.players, r.maxPlayers);
++            netmenu_mtext_r(origin.x + (290<<16), y, tempbuf, MF_Minifont.pal_deselected);
++            continue;
++#endif
+             // name (clipped so it never collides with the columns)
+             char nm[24];
+             Bstrncpyz(nm, r.name, sizeof nm);
+@@ -4936,6 +5069,13 @@ static void Menu_EntryLinkActivate(MenuEntry_t *entry)
+ 
+ #ifdef NETMENU
+     case MENU_NETWORK:
++#ifdef EDUKE32_EIN
++        if (entry == &ME_NET_ROOT_LEAVE)
++        {
++            netmenu_ein_leave_game();
++            break;
++        }
++#endif
+         // HOST PUBLIC / HOST PRIVATE record the mode, then the link advances to config.
+         if (entry == &ME_NET_ROOT_HOSTPUB || entry == &ME_NET_ROOT_HOSTPRIV)
+         {
+@@ -5179,7 +5319,11 @@ static void Menu_EntryLinkActivate(MenuEntry_t *entry)
+     }
+     else if (entry == &ME_NET_LOBBY_LEAVE)
+     {
++#ifdef EDUKE32_EIN
++        netmenu_ein_leave_game();
++#else
+         netmenu_leave();                   // link returns to the multiplayer root
++#endif
+     }
+ #endif
+ }
+@@ -9316,7 +9460,7 @@ void M_DisplayMenus(void)
      // live-reported "guest sits on the wallpaper while the host waits for players".
      {
          auto &nngm = g_player[myconnectindex].ps->gm;
@@ -2178,7 +2353,7 @@ index 1bc19f6..5e63432 100644
          // Debug/harness surface: expose {open, id} of the menu to the page whenever it
          // changes. Costs one string eval per menu TRANSITION (not per frame); lets the
          // headless rig wait for real menu states instead of guessing at timings, and
-@@ -9485,6 +9526,38 @@ void M_DisplayMenus(void)
+@@ -9485,6 +9629,38 @@ void M_DisplayMenus(void)
              return; // level is entering; skip the rest of this menu frame
          }
  #endif // NETNATIVE
