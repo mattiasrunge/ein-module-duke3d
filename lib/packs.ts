@@ -52,7 +52,7 @@ export const KNOWN_PACKS: KnownPack[] = [
     id: 'voxels',
     title: 'Voxels',
     about:
-      'Items, weapons and props as 3D voxel models in place of flat sprites, by ReaperMan, Borion and others. Starting a game takes a few seconds more while the models are built.',
+      'Items, weapons and props as 3D voxel models in place of flat sprites, by ReaperMan, Borion and others. Starting a game takes about 20 seconds more while the models are read and built.',
     file: 'duke3d_voxels.zip',
     url: 'https://github.com/NightFright2k19/duke3d_voxelpack/releases/download/2.0-rc2/duke3d_voxels.zip',
     sha256: 'cc2abd00a0fc72a6cbc32026bd7c68db58140f840cb8b94755f07b8e2c25e253',

@@ -191,8 +191,8 @@ players have made for Duke Nukem 3D, with what each is, who made it and its size
 - **PlayStation sounds** (7 MB): the sound effects in the PlayStation release's
   better quality, by Marphy Black.
 - **Voxels** (4 MB): items, weapons and props as 3D voxel models, by ReaperMan,
-  Borion and others; a game takes a few seconds more to start while the models
-  are built.
+  Borion and others; a game takes about 20 seconds more to start while the
+  models are read and built.
 - **Widescreen fixes** (1 MB): the status bar, the weapons and the menus drawn
   for widescreen, by NightFright and Fox.
 
