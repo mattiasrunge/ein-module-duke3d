@@ -666,7 +666,7 @@ index d0f097d..a5c2961 100644
  #ifdef EDUKE32_GLES
  int32_t glusetexcompr = 2;
 diff --git a/source/duke3d/src/config.cpp b/source/duke3d/src/config.cpp
-index 5fa12c9..402c237 100644
+index 5fa12c9..fbdbddc 100644
 --- a/source/duke3d/src/config.cpp
 +++ b/source/duke3d/src/config.cpp
 @@ -196,7 +196,7 @@ void CONFIG_SetDefaults(void)
@@ -678,16 +678,24 @@ index 5fa12c9..402c237 100644
      uint32_t inited = SDL_WasInit(SDL_INIT_VIDEO);
      if (inited == 0)
          SDL_Init(SDL_INIT_VIDEO);
-@@ -735,6 +735,33 @@ int CONFIG_ReadSetup(void)
+@@ -735,6 +735,41 @@ int CONFIG_ReadSetup(void)
  
      pathsearchmode = 0;
  
 +#ifdef EDUKE32_EIN
 +    // A player with no eduke32.cfg yet starts with EiN's settings, for the
 +    // whole session: the setup is read again once its first part is written.
++    // So does one whose eduke32.cfg is only that first part, without the mouse,
++    // as a game that ended at once leaves it.
 +    static bool newPlayer;
 +    if (ud.config.scripthandle < 0)
 +        newPlayer = true;
++    else
++    {
++        char button[128];
++        if (SCRIPT_GetString(ud.config.scripthandle, "Controls", "MouseButton0", button))
++            newPlayer = true;
++    }
 +    if (newPlayer)
 +    {
 +        extern void G_EinNewPlayer(void);
@@ -712,7 +720,7 @@ index 5fa12c9..402c237 100644
      if (ud.config.scripthandle < 0)
          return -1;
  
-@@ -746,10 +773,22 @@ int CONFIG_ReadSetup(void)
+@@ -746,10 +781,22 @@ int CONFIG_ReadSetup(void)
          SCRIPT_GetString(ud.config.scripthandle, "Comm Setup",commmacro,&ud.ridecule[i][0]);
      }
  
@@ -735,7 +743,7 @@ index 5fa12c9..402c237 100644
  
          char nameBuf[64];
  
-@@ -921,6 +960,9 @@ void CONFIG_WriteSettings(void) // save binds and aliases to <cfgname>_settings.
+@@ -921,6 +968,9 @@ void CONFIG_WriteSettings(void) // save binds and aliases to <cfgname>_settings.
          buildvfs_fclose(fp);
  
          LOG_F(INFO, "Wrote %s", filename);
@@ -745,7 +753,7 @@ index 5fa12c9..402c237 100644
  
          return;
      }
-@@ -963,6 +1005,9 @@ void CONFIG_WriteSetup(uint32_t flags)
+@@ -963,6 +1013,9 @@ void CONFIG_WriteSetup(uint32_t flags)
      if (flags & 1)
      {
          SCRIPT_Save(ud.config.scripthandle, g_setupFileName);
@@ -755,7 +763,7 @@ index 5fa12c9..402c237 100644
          SCRIPT_Free(ud.config.scripthandle);
          return;
      }
-@@ -1060,6 +1105,9 @@ void CONFIG_WriteSetup(uint32_t flags)
+@@ -1060,6 +1113,9 @@ void CONFIG_WriteSetup(uint32_t flags)
  #endif
  
      SCRIPT_Save(ud.config.scripthandle, g_setupFileName);
