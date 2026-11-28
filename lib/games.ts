@@ -9,7 +9,7 @@ import type { OfferedGame } from './api.ts';
  */
 export const GAMES = '/groups/users/duke3d';
 
-/** A base GRP, as Chocolate Duke3D looks for one: `duke3d.grp`, `DUKE3D.GRP`, `duke3d_atomic.grp`. */
+/** A base GRP, as EDuke32 looks for one: `duke3d.grp`, `DUKE3D.GRP`, `duke3d_atomic.grp`. */
 export const GRP_FILE = /^duke3d.*\.grp$/i;
 
 /** A user map beside the GRP, by its name without `.map`, which the game is started on with `-map`. */
@@ -18,7 +18,7 @@ export const MAP_FILE = /^(.+)\.map$/i;
 /** The size of the shareware episode's GRP, 1.3D's. */
 const SHAREWARE = 11035779;
 
-/** The editions the module knows, by their GRP's size, as Chocolate Duke3D knows them. */
+/** The editions the module knows, by their GRP's size, as EDuke32 knows them. */
 const EDITIONS: Record<number, string> = {
   [SHAREWARE]: 'Duke Nukem 3D (shareware)',
   26524524: 'Duke Nukem 3D',

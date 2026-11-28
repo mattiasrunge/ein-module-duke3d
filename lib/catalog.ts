@@ -12,7 +12,7 @@ async function readGame(cmd: Command, name: string): Promise<InstalledGame | und
   const path = `${GAMES}/${name}`;
   const children = await cmd.sys.vfs.children<NodeAttrs & { size?: number }>(cmd.access, path).catch(() => []);
   const files = children.filter((child) => child.node.type !== 'directory').map((child) => ({ name: child.name, size: child.node.attrs.size ?? 0 }));
-  // Chocolate Duke3D plays the first base GRP it finds; the list names the folder by it.
+  // The game plays the first base GRP by name (`-gamegrp`); the list names the folder by it.
   const grp = files.filter((file) => GRP_FILE.test(file.name)).sort((a, b) => a.name.localeCompare(b.name))[0];
   if (!grp) return undefined;
   const size = files.reduce((sum, file) => sum + file.size, 0);

@@ -21,7 +21,9 @@
     body = body.join('\n');
     if (webgl2 && !version) {
       version = '#version 300 es\n';
-      exts = exts.filter(function (e) { return !/standard_derivatives|shader_texture_lod/.test(e); });
+      exts = exts.filter(function (e) {
+        return !/standard_derivatives|shader_texture_lod/.test(e);
+      });
       body = body.replace(/#\s*ifdef\s+GL_ARB_shader_texture_lod/g, '#if 1');
       if (fragment) {
         body = body.replace(/\bvarying\b/g, 'in')

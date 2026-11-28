@@ -18,7 +18,7 @@ import type { Game } from '../../lib/api.ts';
 const BINDS = 'settings.cfg';
 const SETUP = 'eduke32.cfg';
 
-/** The keys of a player who has not played yet, by their function's name (`engine/eduke32/`). */
+/** The keys of a player who has not played yet, by their function's name (`engine/`). */
 const DEFAULT_KEYS: Record<string, string[]> = {
   Move_Forward: ['W', 'Up'],
   Move_Backward: ['S', 'Down'],
@@ -40,7 +40,7 @@ const MIDDLE = 2;
 const WHEEL_UP = 4;
 const WHEEL_DOWN = 5;
 
-/** A new player's mouse buttons (`engine/eduke32/`): the left fires, the right opens, the middle walks forward, the wheel changes weapon. */
+/** A new player's mouse buttons (`engine/`): the left fires, the right opens, the middle walks forward, the wheel changes weapon. */
 const DEFAULT_BUTTONS = ['Fire', 'Open', 'Move_Forward', '', 'Next_Weapon', 'Previous_Weapon'];
 
 /** What a function does, as the drawing names it; a function not here is named by its name, its underscores spaces. */
@@ -84,12 +84,15 @@ function bindsOf(binds: string, setup: string): Binds {
   return { keys, buttons };
 }
 
-/** The player's keys and mouse: those of their settings, or, for a file they have none of yet, those a new player starts with. */
+/**
+ * The player's keys and mouse: those of their settings, or those a new player starts with where
+ * their settings have none yet, as the first eduke32.cfg the game writes as it starts has no mouse.
+ */
 function bindsFor(config: Config | undefined): Binds {
   const read = bindsOf(config?.binds ?? '', config?.setup ?? '');
   return {
-    keys: config?.binds ? read.keys : new Map(Object.entries(DEFAULT_KEYS)),
-    buttons: config?.setup ? read.buttons : [...DEFAULT_BUTTONS],
+    keys: read.keys.size > 0 ? read.keys : new Map(Object.entries(DEFAULT_KEYS)),
+    buttons: read.buttons.length > 0 ? read.buttons : [...DEFAULT_BUTTONS],
   };
 }
 

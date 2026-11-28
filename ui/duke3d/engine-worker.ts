@@ -2,7 +2,7 @@
  * The module's engine worker, run by the games module's kit (`serveEngine`): EDuke32, Emscripten's
  * build in `assets/`, with the game's GRP read from EiN a piece at a time as it asks.
  *
- * The game keeps its own loops, so it runs under ASYNCIFY (`engine/eduke32/einlayer.cpp`): whenever
+ * The game keeps its own loops, so it runs under ASYNCIFY (`engine/einlayer.cpp`): whenever
  * it has shown a frame, or has polled for a frame's time, it waits for its next tick
  * (`Module.einFrame`), and a tick lets it run until it waits again. Between ticks the keys, the
  * mouse and the kit's other calls reach it. It draws with WebGL 2 on the worker's canvas, Polymost's
@@ -11,7 +11,7 @@
 import { type EmscriptenFS, type EmscriptenModule, type Engine, exitStatus, FrameCanvas, heapSound, serveEngine, startEmscripten } from '@games/engine';
 import { type DukeStart, GAME_DIR } from './start.ts';
 
-/** What the engine's platform layer exports (`engine/eduke32/`), beside Emscripten's own. */
+/** What the engine's platform layer exports (`engine/`), beside Emscripten's own. */
 type DukeModule = EmscriptenModule & {
   FS: EmscriptenFS & { chdir(path: string): void };
   callMain(args: string[]): number;

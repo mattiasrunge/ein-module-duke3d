@@ -15,4 +15,4 @@ atomic/
 - GOG or Steam: the game's folder; Megaton Edition: `gameroot/`
 - GOG's installer: `innoextract -e setup_duke3d_<version>.exe`
 
-The 20th Anniversary World Tour and EDuke32 add-ons do not play here.
+The 20th Anniversary World Tour is not known to play here.

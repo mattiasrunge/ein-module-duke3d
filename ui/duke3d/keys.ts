@@ -92,8 +92,8 @@ const SCANCODES: Record<string, number> = {
   NumpadDecimal: 0x53,
   F11: 0x57,
   F12: 0x58,
-  // As Chocolate Duke3D's SDL driver sent it, and the game reads it.
-  Pause: 0x59,
+  // As EDuke32 numbers it, an extended key.
+  Pause: 0xe045,
   NumpadEnter: 0xe01c,
   ControlRight: 0xe01d,
   NumpadDivide: 0xe035,
