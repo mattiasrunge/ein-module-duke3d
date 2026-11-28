@@ -200,10 +200,10 @@ players have made for Duke Nukem 3D, with what each is, who made it and its size
   edition. Its HUD weapons and HUD and menu art are left out, which would replace
   the widescreen fixes', and so is its Polymer edition, which this build has no
   renderer for (`assets/packs/hrp-polymost.def` says what is loaded). A level
-  reads 100 to 200 MB of it, and the graphics card holds 300 to 400 MB of its
-  textures; the first time in a browser that level starts later and its first
-  moments are slow while its textures come, and the browser keeps what was read
-  for the next starts.
+  reads 100 to 200 MB of it the first time in a browser, which keeps it for the
+  next starts, and the graphics card holds 300 to 400 MB of its textures. A level
+  takes about half a minute longer to load while its textures are decoded, the
+  first time in a browser a few minutes.
 
 Nothing is fetched until someone chooses to: **Fetch** (an administrator's, as
 EiN lets only the administrator fetch from the internet) downloads a pack from
